@@ -1,42 +1,42 @@
 import React from 'react';
-import {StyleSheet, Text, TextInput, TouchableOpacity, View, Image} from 'react-native';
-import { useFonts, Inter_400Regular, Inter_700Bold } from '@expo-google-fonts/inter';
+import {StyleSheet, Text, TouchableOpacity, View} from 'react-native';
+import { useFonts, BebasNeue_400Regular } from '@expo-google-fonts/bebas-neue';
+import { Oswald_400Regular, Oswald_600SemiBold, Oswald_700Bold } from '@expo-google-fonts/oswald';
 
 export default function StandardScreen({ navigation }: any) {
 
   const [fontsLoaded] = useFonts({
-    Inter_400Regular,
-    Inter_700Bold,
+    BebasNeue_400Regular,
+    Oswald_400Regular,
+    Oswald_600SemiBold,
+    Oswald_700Bold,
   });
 
   if (!fontsLoaded) {
     return null;
-
   }
 
   return (
-  
-  <View style={styles.container}>
+    <View style={styles.container}>
       <View style={styles.borderBox}>
         <Text style={styles.heading}>MEMBERSHIP PLANS</Text>
-        <View style={styles.container}>
-      <Text style={styles.heading}>💎 Standard Gym Membership Includes:</Text>
-      <Text style={styles.text}>• All Basic Membership equipment access</Text>
-      <Text style={styles.text}>• Advanced strength machines and cable stations</Text>
-      <Text style={styles.text}>• 2 free personal training sessions per month</Text>    
-      <Text style={styles.text}>• Free monthly progress check with a trainer</Text>
-      <Text style={styles.text}>• Priority locker access and towel service</Text>
-      <Text style={styles.text}>• Extended hours access including early mornings and late evenings</Text>
-      <Text style={styles.text}>• 10% off supplements and gear at our gym shop</Text>
+        <Text style={styles.heading}>💎 Standard Gym Membership Includes:</Text>
 
-      <TouchableOpacity style={styles.blackBox} onPress ={() => navigation.navigate('StandardPlan')}>
-        <Text style={styles.text2}>BUY NOW!</Text>
+        <Text style={styles.text}>• All Basic Membership equipment access</Text>
+        <Text style={styles.text}>• Advanced strength machines and cable stations</Text>
+        <Text style={styles.text}>• 2 free personal training sessions per month</Text>
+        <Text style={styles.text}>• Free monthly progress check with a trainer</Text>
+        <Text style={styles.text}>• Priority locker access and towel service</Text>
+        <Text style={styles.text}>• Extended hours access including early mornings and late evenings</Text>
+        <Text style={styles.text}>• 10% off supplements and gear at our gym shop</Text>
+
+        <TouchableOpacity style={styles.blackBox} onPress={() => navigation.navigate('StandardPlan')}>
+          <Text style={styles.buttonText}>BUY NOW!</Text>
         </TouchableOpacity>
+      </View>
     </View>
-    </View>
-    </View>  
-          )
-        };
+  );
+};
 
 const styles = StyleSheet.create({
   container: {
@@ -45,18 +45,17 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-
-  borderBox:{
-    borderWidth: 5,
+  borderBox: {
+    borderWidth: 4,
     borderColor: 'black',
     backgroundColor: 'white',
     width: 380,
     height: 840,
-   
+    borderRadius: 20,
+    overflow: 'hidden',
   },
-
   blackBox: {
-    width: 350,
+    width: 340,
     height: 75,
     backgroundColor: 'black',
     justifyContent: 'center',
@@ -64,41 +63,39 @@ const styles = StyleSheet.create({
     marginTop: 40,
     marginBottom: 40,
     flexDirection: 'column',
+    borderRadius: 16,
   },
-
-  text:{
+  text: {
     padding: 12,
-    fontSize: 20,
+    fontSize: 15,
     fontWeight: 'bold',
     color: 'black',
-    letterSpacing: 2,
+    letterSpacing: 1,
     lineHeight: 20,
-    fontFamily: 'Inter_700Bold',
+    fontFamily: 'Oswald_400Regular',
     textAlign: 'left',
   },
-
-  text2:{
+  buttonText: {
     padding: 12,
-    fontSize: 20,
+    fontSize: 24,
     fontWeight: 'bold',
     color: 'white',
-    letterSpacing: 4,
-    fontFamily: 'Inter_700Bold',
+    letterSpacing: 6,
+    fontFamily: 'BebasNeue_400Regular',
     textAlign: 'center',
     justifyContent: 'center',
     width: '100%',
   },
-
-  heading:{
+  heading: {
     padding: 12,
-    fontSize: 22,
+    fontSize: 28,
     fontWeight: 'bold',
     color: 'black',
-    letterSpacing: 4,
-    fontFamily: 'Inter_700Bold',
+    letterSpacing: 3,
+    fontFamily: 'BebasNeue_400Regular',
     textAlign: 'left',
     marginTop: 20,
-    marginBottom: 20,
+    marginBottom: 10,
+    lineHeight: 36,
   },
-
 });

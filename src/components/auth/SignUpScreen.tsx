@@ -1,13 +1,16 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   StyleSheet, Text, TextInput, TouchableOpacity, View, Image, ActivityIndicator
 } from 'react-native';
-import { useFonts, Inter_400Regular, Inter_700Bold } from '@expo-google-fonts/inter';
-import { createUserWithEmailAndPassword, updateProfile } from 'firebase/auth';
-import { auth } from '../../FirebaseConfig'; // ← adjust this path if needed
+import { useFonts, BebasNeue_400Regular } from '@expo-google-fonts/bebas-neue';
+import { Oswald_400Regular, Oswald_600SemiBold, Oswald_700Bold } from '@expo-google-fonts/oswald';
+import { createUserWithEmailAndPassword, updateProfile, signInWithCredential, GoogleAuthProvider } from 'firebase/auth';
+import { auth } from '../../FirebaseConfig';
+import * as Google from 'expo-auth-session/providers/google';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 export default function SignUpScreen({ navigation }: any) {
-  const [fontsLoaded] = useFonts({ Inter_400Regular, Inter_700Bold });
+  const [fontsLoaded] = useFonts({ BebasNeue_400Regular, Oswald_400Regular, Oswald_600SemiBold, Oswald_700Bold });
   const [username, setUsername] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -15,41 +18,44 @@ export default function SignUpScreen({ navigation }: any) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  const [request, response, promptAsync] = Google.useAuthRequest({
+    clientId: '552125531713-ii8l769urh188qhhdqv14hsjklqk0bje.apps.googleusercontent.com',
+  });
+
+  // Google Sign-In response handler
+  useEffect(() => {
+    if (response?.type === 'success') {
+      const { id_token } = response.params;
+      const credential = GoogleAuthProvider.credential(id_token);
+      signInWithCredential(auth, credential)
+        .then(async () => {
+          const profile = await AsyncStorage.getItem('user_profile');
+          navigation.replace(profile ? 'Main' : 'Detail');
+        })
+        .catch((err) => {
+          setError('Google sign-in failed. Try again.');
+          console.error(err);
+        });
+    }
+  }, [response]);
+
   if (!fontsLoaded) return null;
 
   const handleSignUp = async () => {
     setError(null);
-
-    // Basic validation
-    if (!username.trim()) {
-      setError('Please enter a username.');
-      return;
-    }
-    if (!email.trim()) {
-      setError('Please enter an email.');
-      return;
-    }
-    if (!password) {
-      setError('Please enter a password.');
-      return;
-    }
-    if (password !== confirmPassword) {
-      setError('Passwords do not match.');
-      return;
-    }
+    if (!username.trim()) { setError('Please enter a username.'); return; }
+    if (!email.trim()) { setError('Please enter an email.'); return; }
+    if (!password) { setError('Please enter a password.'); return; }
+    if (password !== confirmPassword) { setError('Passwords do not match.'); return; }
 
     setLoading(true);
     try {
-      // Create account
       const userCredential = await createUserWithEmailAndPassword(auth, email.trim(), password);
-      // Optionally set displayName
       if (userCredential.user && username.trim()) {
         await updateProfile(userCredential.user, { displayName: username.trim() });
       }
-      // Replace navigation to Detail so user can't go back to signup/login
       navigation.replace('Detail');
     } catch (err: any) {
-      // Map common firebase errors to friendly messages
       const code = err.code ?? err.message ?? '';
       if (code.includes('auth/email-already-in-use')) setError('This email is already in use.');
       else if (code.includes('auth/invalid-email')) setError('Invalid email address.');
@@ -66,18 +72,13 @@ export default function SignUpScreen({ navigation }: any) {
         <Text style={styles.heading}>WELCOME TO{"\n"}BARBELL FITNESS</Text>
 
         <View style={styles.blackBox}>
-          <View style={styles.mainBox}>
             <TextInput
               style={styles.BoxText}
               placeholder="ENTER USERNAME"
               placeholderTextColor="black"
               autoCapitalize="words"
               value={username}
-              onChangeText={setUsername}
-            />
-          </View>
-
-          <View style={styles.mainBox}>
+              onChangeText={setUsername}/>
             <TextInput
               style={styles.BoxText}
               placeholder="ENTER EMAIL"
@@ -85,51 +86,41 @@ export default function SignUpScreen({ navigation }: any) {
               keyboardType="email-address"
               autoCapitalize="none"
               value={email}
-              onChangeText={setEmail}
-            />
-          </View>
-
-          <View style={styles.mainBox}>
+              onChangeText={setEmail}/>
             <TextInput
               style={styles.BoxText}
               placeholder="ENTER PASSWORD"
               placeholderTextColor="black"
               secureTextEntry={true}
               value={password}
-              onChangeText={setPassword}
-            />
-          </View>
-
-          <View style={styles.mainBox}>
+              onChangeText={setPassword}/>
             <TextInput
               style={styles.BoxText}
               placeholder="CONFIRM PASSWORD"
               placeholderTextColor="black"
               secureTextEntry={true}
               value={confirmPassword}
-              onChangeText={setConfirmPassword}
-            />
-          </View>
+              onChangeText={setConfirmPassword}/>
         </View>
 
         {error ? (
           <Text style={{ color: 'red', textAlign: 'center', marginVertical: 8 }}>{error}</Text>
         ) : null}
 
-        <TouchableOpacity style={styles.mainBox} onPress={handleSignUp} disabled={loading}>
-          {loading ? <ActivityIndicator /> : <Text style={styles.text}>SIGN UP</Text>}
+        <TouchableOpacity style={styles.loginBox} onPress={handleSignUp} disabled={loading}>
+          {loading ? <ActivityIndicator color="white" /> : <Text style={styles.buttonText}>SIGN UP</Text>}
         </TouchableOpacity>
 
-        <TouchableOpacity style={styles.mainBox} onPress={() => navigation.navigate('Login')}>
-          <Text style={styles.text}>LOGIN</Text>
+        <TouchableOpacity style={styles.link} onPress={() => navigation.navigate('Login')}>
+          <Text style={styles.link}>Already have an account?{'\n'}Click to login</Text>
         </TouchableOpacity>
 
         <View style={styles.line} />
 
-        <Text style={styles.text}>or login with</Text>
+        <Text style={styles.orText}>or login with</Text>
 
         <View style={styles.socialContainer}>
-          <TouchableOpacity style={styles.iconBox}>
+          <TouchableOpacity style={styles.iconBox} onPress={() => promptAsync()} disabled={!request}>
             <Image source={require('./assets/google.png')} style={styles.icon} />
           </TouchableOpacity>
           <TouchableOpacity style={styles.iconBox}>
@@ -151,97 +142,125 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-
-  borderBox:{
-    borderWidth: 5,
+  borderBox: {
+    borderWidth: 4,
     borderColor: 'black',
     backgroundColor: 'white',
     width: 380,
     height: 840,
-   
+    borderRadius: 20,
+    overflow: 'hidden',
   },
-
-  mainBox:{
-    borderWidth: 5,
+  blackBox: {
+    width: 340,
+    height: 400,
+    backgroundColor: 'black',
+    justifyContent: 'center',
+    alignSelf: 'center',
+    marginTop: 10,
+    borderRadius: 16,
+  },
+  loginBox: {
+    borderWidth: 3,
+    borderColor: 'black',
+    backgroundColor: 'black',
+    fontFamily: 'BebasNeue_400Regular',
+    width: 340,
+    height: 58,
+    marginBottom: 10,
+    marginTop: 10,
+    justifyContent: 'center',
+    alignSelf: 'center',
+    alignItems: 'center',
+    borderRadius: 14,
+  },
+  iconBox: {
+    borderWidth: 4,
     borderColor: 'black',
     backgroundColor: 'white',
-    width: 350,
-    height: 60,
-  marginTop: 10,
-  alignSelf: 'center',
+    width: 55,
+    height: 55,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginTop: 20,
+    borderRadius: 14,
   },
-
-  iconBox:{
-    borderWidth: 5,
-    borderColor: 'black',
-    backgroundColor: 'white',
-    width: 75,
-    height: 75,
-  marginTop: 10,
-  resizeMode: 'contain',
-  alignSelf: 'center',
-  justifyContent: 'center',
-  alignItems: 'center',
-  },
-
   icon: {
     width: 30,
     height: 30,
     resizeMode: 'contain',
   },
-
   socialContainer: {
     flexDirection: 'row',
-    justifyContent: 'space-around',
-  },
-
-  BoxText:{
-    padding: 12,
-    fontSize: 20,
-    fontWeight: 'bold',
-    color: 'black',
-    letterSpacing: 4,
-    fontFamily: 'Inter_700Bold',
-    textAlign: 'left',
-    width: '100%',
-  },
-
-  text:{
-    padding: 12,
-    fontSize: 20,
-    fontWeight: 'bold',
-    color: 'black',
-    letterSpacing: 4,
-    fontFamily: 'Inter_700Bold',
-    textAlign: 'center',
-    justifyContent: 'flex-start',
-    width: '100%',
-  },
-
-  heading:{
-    padding: 12,
-    fontSize: 22,
-    fontWeight: 'bold',
-    color: 'black',
-    letterSpacing: 4,
-    fontFamily: 'Inter_700Bold',
-    textAlign: 'left',
-   
-  },
-
-  blackBox: {
-    width: 350,
-    height: 400,
-    backgroundColor: 'black',
     justifyContent: 'center',
+    gap: 20,
+    marginTop: -10,
+  },
+  BoxText: {
+    padding: 14,
+    fontSize: 15,
+    fontWeight: 'bold',
+    color: 'black',
+    letterSpacing: 2,
+    fontFamily: 'Oswald_600SemiBold',
+    textAlign: 'left',
+    width: 310,
+    height: 50,
+    backgroundColor: 'white',
+    borderWidth: 3,
+    borderColor: 'black',
+    borderRadius: 14,
     alignSelf: 'center',
-  marginTop: 10,
-
+    marginTop: 15,
+    marginBottom: 15,
+  },
+  buttonText: {
+    padding: 12,
+    fontSize: 24,
+    fontWeight: 'bold',
+    color: 'white',
+    letterSpacing: 6,
+    fontFamily: 'BebasNeue_400Regular',
+    textAlign: 'center',
+    textTransform: 'uppercase',
+  },
+  orText: {
+    padding: 10,
+    fontSize: 14,
+    fontWeight: '600',
+    color: 'black',
+    letterSpacing: 2,
+    fontFamily: 'Oswald_400Regular',
+    textAlign: 'center',
+    textTransform: 'uppercase',
+  },
+  link: {
+    padding: 8,
+    fontSize: 13,
+    fontWeight: '600',
+    color: 'black',
+    letterSpacing: 1.5,
+    fontFamily: 'Oswald_400Regular',
+    textDecorationLine: 'underline',
+    textAlign: 'center',
+  },
+  heading: {
+    padding: 16,
+    fontSize: 32,
+    fontWeight: 'bold',
+    color: 'black',
+    letterSpacing: 3,
+    fontFamily: 'BebasNeue_400Regular',
+    textAlign: 'left',
+    marginBottom: 10,
+    lineHeight: 42,
   },
   line: {
-    height: 6,
-    backgroundColor: 'black', 
-    marginVertical: 10,
+    alignContent: 'flex-end',
+    height: 4,
+    backgroundColor: 'black',
+    marginTop: 10,
+    marginHorizontal: 16,
+    borderRadius: 2,
   },
 });
-

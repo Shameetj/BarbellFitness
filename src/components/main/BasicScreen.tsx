@@ -1,18 +1,15 @@
 import React from 'react';
 import { StyleSheet, Text, TouchableOpacity, View, Alert } from 'react-native';
-import { useFonts, Inter_400Regular, Inter_700Bold } from '@expo-google-fonts/inter';
+import { useFonts, BebasNeue_400Regular } from '@expo-google-fonts/bebas-neue';
+import { Oswald_400Regular, Oswald_600SemiBold, Oswald_700Bold } from '@expo-google-fonts/oswald';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
-// helper: format Date -> YYYY-MM-DD
 const toISODate = (d: Date) => d.toISOString().slice(0, 10);
 
-// helper: add months safely (handles month overflow like Jan 31 -> Feb 28/29)
 const addMonths = (date: Date, months: number) => {
   const d = new Date(date.getTime());
   const day = d.getDate();
   d.setMonth(d.getMonth() + months);
-
-  // if month overflowed (e.g., Feb doesn't have 31), set to last day of previous month
   if (d.getDate() < day) {
     d.setDate(0);
   }
@@ -30,8 +27,10 @@ const persistMembership = async (membership: object) => {
 
 export default function BasicScreen({ navigation }: any) {
   const [fontsLoaded] = useFonts({
-    Inter_400Regular,
-    Inter_700Bold,
+    BebasNeue_400Regular,
+    Oswald_400Regular,
+    Oswald_600SemiBold,
+    Oswald_700Bold,
   });
 
   if (!fontsLoaded) return null;
@@ -39,7 +38,7 @@ export default function BasicScreen({ navigation }: any) {
   const handleBuyNow = async () => {
     try {
       const start = new Date();
-      const end = addMonths(start, 1); // 1 month duration
+      const end = addMonths(start, 1);
       const membership = {
         plan: 'Basic',
         startDate: toISODate(start),
@@ -53,7 +52,6 @@ export default function BasicScreen({ navigation }: any) {
         {
           text: 'OK',
           onPress: () => {
-            // navigate to Main -> Home so the calendar reloads and shows membership
             navigation.navigate('Main', { screen: 'Home' });
           },
         },
@@ -79,7 +77,7 @@ export default function BasicScreen({ navigation }: any) {
         <Text style={styles.text}>• Discounts on personal training and upgrades</Text>
 
         <TouchableOpacity style={styles.blackBox} onPress={handleBuyNow}>
-          <Text style={styles.text2}>BUY NOW!</Text>
+          <Text style={styles.buttonText}>BUY NOW!</Text>
         </TouchableOpacity>
       </View>
     </View>
@@ -93,18 +91,17 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-
-  borderBox:{
-    borderWidth: 5,
+  borderBox: {
+    borderWidth: 4,
     borderColor: 'black',
     backgroundColor: 'white',
     width: 380,
     height: 840,
-   
+    borderRadius: 20,
+    overflow: 'hidden',
   },
-
   blackBox: {
-    width: 350,
+    width: 340,
     height: 75,
     backgroundColor: 'black',
     justifyContent: 'center',
@@ -112,41 +109,39 @@ const styles = StyleSheet.create({
     marginTop: 40,
     marginBottom: 40,
     flexDirection: 'column',
+    borderRadius: 16,
   },
-
-  text:{
+  text: {
     padding: 12,
-    fontSize: 20,
+    fontSize: 15,
     fontWeight: 'bold',
     color: 'black',
-    letterSpacing: 2,
+    letterSpacing: 1,
     lineHeight: 20,
-    fontFamily: 'Inter_700Bold',
+    fontFamily: 'Oswald_400Regular',
     textAlign: 'left',
   },
-
-  text2:{
+  buttonText: {
     padding: 12,
-    fontSize: 20,
+    fontSize: 24,
     fontWeight: 'bold',
     color: 'white',
-    letterSpacing: 4,
-    fontFamily: 'Inter_700Bold',
+    letterSpacing: 6,
+    fontFamily: 'BebasNeue_400Regular',
     textAlign: 'center',
     justifyContent: 'center',
     width: '100%',
   },
-
-  heading:{
+  heading: {
     padding: 12,
-    fontSize: 22,
+    fontSize: 28,
     fontWeight: 'bold',
     color: 'black',
-    letterSpacing: 4,
-    fontFamily: 'Inter_700Bold',
+    letterSpacing: 3,
+    fontFamily: 'BebasNeue_400Regular',
     textAlign: 'left',
     marginTop: 20,
-    marginBottom: 20,
+    marginBottom: 10,
+    lineHeight: 36,
   },
-
 });

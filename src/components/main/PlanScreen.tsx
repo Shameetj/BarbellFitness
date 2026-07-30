@@ -1,46 +1,44 @@
 import React from 'react';
-import {StyleSheet, Text, TextInput, TouchableOpacity, View, Image} from 'react-native';
-import { useFonts, Inter_400Regular, Inter_700Bold } from '@expo-google-fonts/inter';
+import {StyleSheet, Text, TouchableOpacity, View} from 'react-native';
+import { useFonts, BebasNeue_400Regular } from '@expo-google-fonts/bebas-neue';
+import { Oswald_400Regular, Oswald_600SemiBold, Oswald_700Bold } from '@expo-google-fonts/oswald';
 
 
 export default function PlanScreen({ navigation }: any) {
 
   const [fontsLoaded] = useFonts({
-    Inter_400Regular,
-    Inter_700Bold,
+    BebasNeue_400Regular,
+    Oswald_400Regular,
+    Oswald_600SemiBold,
+    Oswald_700Bold,
   });
 
   if (!fontsLoaded) {
     return null;
-
   }
 
-
   return (
-
-    
     <View style={styles.container}>
       <View style={styles.borderBox}>
-  <Text style={styles.heading}>MEMBERSHIP PLANS</Text>
+        <Text style={styles.heading}>MEMBERSHIP PLANS</Text>
 
-        <TouchableOpacity style={styles.blackBox} onPress ={() => navigation.navigate('BasicPlan')}>
+        <TouchableOpacity style={styles.blackBox} onPress={() => navigation.navigate('BasicPlan')}>
           <Text style={styles.text}>BASIC PLAN{'\n'}
           ₹900/month</Text>
         </TouchableOpacity>
 
-        <TouchableOpacity style={styles.blackBox} onPress ={() => navigation.navigate('StandardPlan')}>
+        <TouchableOpacity style={styles.blackBox} onPress={() => navigation.navigate('StandardPlan')}>
           <Text style={styles.text}>STANDARD PLAN{'\n'}
           ₹1500/month</Text>
         </TouchableOpacity>
 
-        <TouchableOpacity style={styles.blackBox} onPress ={() => navigation.navigate('WellnessPlan')}>
+        <TouchableOpacity style={styles.blackBox} onPress={() => navigation.navigate('WellnessPlan')}>
           <Text style={styles.text}>WELLNESS PLAN{'\n'}
           ₹2000/month</Text>
         </TouchableOpacity>
 
       </View>
-    </View> 
-    
+    </View>
   );
 };
 
@@ -51,18 +49,17 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-
-  borderBox:{
-    borderWidth: 5,
+  borderBox: {
+    borderWidth: 4,
     borderColor: 'black',
     backgroundColor: 'white',
     width: 380,
     height: 840,
-   
+    borderRadius: 20,
+    overflow: 'hidden',
   },
-
   blackBox: {
-    width: 350,
+    width: 340,
     height: 150,
     backgroundColor: 'black',
     justifyContent: 'center',
@@ -70,31 +67,30 @@ const styles = StyleSheet.create({
     marginTop: 40,
     marginBottom: 40,
     flexDirection: 'column',
+    borderRadius: 16,
   },
-
-  text:{
+  text: {
     padding: 12,
-    fontSize: 20,
+    fontSize: 26,
     fontWeight: 'bold',
     color: 'white',
     letterSpacing: 4,
-    lineHeight: 35,
-    fontFamily: 'Inter_700Bold',
+    lineHeight: 38,
+    fontFamily: 'BebasNeue_400Regular',
     textAlign: 'center',
     justifyContent: 'center',
     width: '100%',
   },
-
-  heading:{
-    padding: 12,
-    fontSize: 22,
+  heading: {
+    padding: 16,
+    fontSize: 32,
     fontWeight: 'bold',
     color: 'black',
-    letterSpacing: 4,
-    fontFamily: 'Inter_700Bold',
+    letterSpacing: 3,
+    fontFamily: 'BebasNeue_400Regular',
     textAlign: 'center',
     marginTop: 20,
     marginBottom: 20,
+    lineHeight: 42,
   },
-
 });

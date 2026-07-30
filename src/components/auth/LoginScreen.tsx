@@ -2,16 +2,19 @@ import React, { useEffect, useState } from 'react';
 import {
   StyleSheet, Text, TextInput, TouchableOpacity, View, Image, ActivityIndicator
 } from 'react-native';
-import { useFonts, Inter_400Regular, Inter_700Bold } from '@expo-google-fonts/inter';
+import { useFonts, BebasNeue_400Regular } from '@expo-google-fonts/bebas-neue';
+import { Oswald_400Regular, Oswald_600SemiBold, Oswald_700Bold } from '@expo-google-fonts/oswald';
 import { signInWithEmailAndPassword, onAuthStateChanged } from 'firebase/auth';
 import { auth } from '../../FirebaseConfig'; // adjust path if needed
+import { Ionicons } from '@expo/vector-icons';
 
 export default function LoginScreen({ navigation }: any) {
-  const [fontsLoaded] = useFonts({ Inter_400Regular, Inter_700Bold });
+  const [fontsLoaded] = useFonts({ BebasNeue_400Regular, Oswald_400Regular, Oswald_600SemiBold, Oswald_700Bold });
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [showPassword, setShowPassword] = useState(false);
 
   // 🔄 Auto redirect if already logged in
   useEffect(() => {
@@ -52,27 +55,26 @@ export default function LoginScreen({ navigation }: any) {
         <Text style={styles.heading}>HELLO!{"\n"}LOGIN TO GET STARTED</Text>
 
         <View style={styles.blackBox}>
-          <View style={styles.mainBox}>
+          <TextInput
+            style={styles.BoxText}
+            placeholder="ENTER EMAIL"
+            placeholderTextColor="black"
+            keyboardType="email-address"
+            autoCapitalize="none"
+            value={email}
+            onChangeText={setEmail} />
+          <View style={styles.passwordRow}>
             <TextInput
-              style={styles.BoxText}
-              placeholder="ENTER EMAIL"
-              placeholderTextColor="black"
-              keyboardType="email-address"
-              autoCapitalize="none"
-              value={email}
-              onChangeText={setEmail}
-            />
-          </View>
-
-          <View style={styles.mainBox}>
-            <TextInput
-              style={styles.BoxText}
+              style={styles.passwordInput}
               placeholder="ENTER PASSWORD"
               placeholderTextColor="black"
-              secureTextEntry={true}
+              secureTextEntry={!showPassword}
               value={password}
               onChangeText={setPassword}
             />
+            <TouchableOpacity onPress={() => setShowPassword(!showPassword)} style={styles.eyeButton}>
+              <Ionicons name={showPassword ? 'eye-outline' : 'eye-off-outline'} size={22} color="black" />
+            </TouchableOpacity>
           </View>
         </View>
 
@@ -90,7 +92,7 @@ export default function LoginScreen({ navigation }: any) {
 
         <View style={styles.line} />
 
-        <Text style={styles.text}>or login with</Text>
+        <Text style={styles.orText}>or login with</Text>
 
         <View style={styles.socialContainer}>
           <TouchableOpacity style={styles.iconBox}>
@@ -116,50 +118,54 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
 
-  borderBox:{
-    borderWidth: 5,
+  borderBox: {
+    borderWidth: 4,
     borderColor: 'black',
     backgroundColor: 'white',
     width: 380,
     height: 840,
-   
+    borderRadius: 20,
+    overflow: 'hidden',
   },
 
-  mainBox:{
-    borderWidth: 5,
+  mainBox: {
+    borderWidth: 3,
     borderColor: 'black',
     backgroundColor: 'white',
-    width: 350,
-    height: 60,
+    width: 340,
+    height: 58,
     marginTop: 30,
     marginBottom: 30,
-  alignSelf: 'center',
+    alignSelf: 'center',
+    borderRadius: 14,
   },
 
-  loginBox:{
-    borderWidth: 5,
+  loginBox: {
+    borderWidth: 3,
     borderColor: 'black',
-    backgroundColor: 'white',
-    fontFamily: 'Inter_700Bold',
-    width: 350,
-    height: 60,
-    marginBottom: 15,
+    backgroundColor: 'black',
+    fontFamily: 'BebasNeue_400Regular',
+    width: 340,
+    height: 58,
+    marginBottom: 10,
+    marginTop: 10,
     justifyContent: 'center',
     alignSelf: 'center',
     alignItems: 'center',
+    borderRadius: 14,
   },
 
-  iconBox:{
-    borderWidth: 5,
+  iconBox: {
+    borderWidth: 4,
     borderColor: 'black',
     backgroundColor: 'white',
-    width: 75,
-    height: 75,
-  resizeMode: 'contain',
-  alignSelf: 'center',
-  justifyContent: 'center',
-  alignItems: 'center',
-  marginTop: 20,
+    width: 55,
+    height: 55,
+    resizeMode: 'contain',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginTop: 20,
+    borderRadius: 14,
   },
 
   icon: {
@@ -170,72 +176,128 @@ const styles = StyleSheet.create({
 
   socialContainer: {
     flexDirection: 'row',
-    justifyContent: 'space-around',
-    marginTop: -10, 
+    justifyContent: 'center',
+    gap: 20,
+    marginTop: -10,
   },
 
-  BoxText:{
-      padding: 12,
-      fontSize: 20,
-      fontWeight: 'bold',
-      color: 'black',
-      letterSpacing: 4,
-      fontFamily: 'Inter_700Bold',
-      textAlign: 'left',
-      width: '100%',
-  },
-
-  text:{
-    padding: 12,
-    fontSize: 20,
+  BoxText: {
+    padding: 14,
+    fontSize: 15,
     fontWeight: 'bold',
     color: 'black',
-    letterSpacing: 4,
-    fontFamily: 'Inter_700Bold',
+    letterSpacing: 2,
+    fontFamily: 'Oswald_600SemiBold',
+    textAlign: 'left',
+    width: 310,
+    height: 50,
+    backgroundColor: 'white',
+    borderWidth: 3,
+    borderColor: 'black',
+    borderRadius: 14,
+    alignSelf: 'center',
+    marginTop: 15,
+    marginBottom: 15,
+  },
+
+  passwordRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    alignSelf: 'center',
+    width: 310,
+    marginTop: 15,
+    marginBottom: 15,
+  },
+
+  passwordInput: {
+    flex: 1,
+    padding: 14,
+    fontSize: 15,
+    fontWeight: 'bold',
+    color: 'black',
+    letterSpacing: 2,
+    fontFamily: 'Oswald_600SemiBold',
+    textAlign: 'left',
+    height: 50,
+    backgroundColor: 'white',
+    borderWidth: 3,
+    borderColor: 'black',
+    borderRadius: 14,
+  },
+
+  eyeButton: {
+    position: 'absolute',
+    right: 12,
+    padding: 4,
+  },
+
+  eyeIcon: {
+    fontSize: 20,
+  },
+
+  text: {
+    padding: 12,
+    fontSize: 24,
+    fontWeight: 'bold',
+    color: 'white',
+    letterSpacing: 6,
+    fontFamily: 'BebasNeue_400Regular',
     textAlign: 'center',
     justifyContent: 'center',
     width: '100%',
+    textTransform: 'uppercase',
   },
 
-  link:{
-    padding: 12,
-    fontSize: 16,
-    fontWeight: 'bold',
+  orText: {
+    padding: 10,
+    fontSize: 14,
+    fontWeight: '600',
     color: 'black',
-    letterSpacing: 4,
-    fontFamily: 'Inter_700Bold',
+    letterSpacing: 2,
+    fontFamily: 'Oswald_400Regular',
+    textAlign: 'center',
+    textTransform: 'uppercase',
+  },
+
+  link: {
+    padding: 12,
+    fontSize: 13,
+    fontWeight: '600',
+    color: 'black',
+    letterSpacing: 1.5,
+    fontFamily: 'Oswald_400Regular',
     textDecorationLine: 'underline',
     textAlign: 'center',
   },
 
 
-  heading:{
-    padding: 12,
-    fontSize: 22,
+  heading: {
+    padding: 16,
+    fontSize: 32,
     fontWeight: 'bold',
     color: 'black',
-    letterSpacing: 4,
-    fontFamily: 'Inter_700Bold',
+    letterSpacing: 3,
+    fontFamily: 'BebasNeue_400Regular',
     textAlign: 'left',
     marginBottom: 30,
-   
+    lineHeight: 42,
   },
 
   blackBox: {
-    width: 350,
+    width: 340,
     height: 300,
     backgroundColor: 'black',
     justifyContent: 'center',
     alignSelf: 'center',
-  marginBottom: 50,
-  
-
+    borderRadius: 16,
   },
   line: {
-   alignContent:'flex-end',
-    height: 6,
-    backgroundColor: 'black', 
-    marginTop:15,
+    alignContent: 'flex-end',
+    height: 4,
+    backgroundColor: 'black',
+    marginTop: 15,
+    marginHorizontal: 16,
+    borderRadius: 2,
   },
 
 });

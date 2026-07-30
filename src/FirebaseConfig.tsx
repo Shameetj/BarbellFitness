@@ -1,6 +1,6 @@
 // src/FirebaseConfig.tsx
 import { initializeApp, getApps, getApp } from 'firebase/app';
-import { getAuth } from 'firebase/auth';
+import { getAuth, GoogleAuthProvider } from 'firebase/auth';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 // 🧩 Your Firebase project configuration

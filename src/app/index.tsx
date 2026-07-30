@@ -1,4 +1,4 @@
-// src/app/index.tsx  (or your app entry)
+
 import React from 'react';
 import { StyleSheet } from 'react-native';
 import { NavigationContainer, NavigationIndependentTree } from '@react-navigation/native';
@@ -13,8 +13,6 @@ import WellnessScreen from '../components/main/WellnessScreen';
 import MainScreen from '../components/main/MainScreen';
 
 
-
-// 1) Define the param list for your stack (add or change params as needed)
 export type RootStackParamList = {
   Login: undefined;
   SignUp: undefined;
@@ -26,7 +24,7 @@ export type RootStackParamList = {
   Main: undefined;
 };
 
-// 2) Create typed stack
+
 const Stack = createNativeStackNavigator();
 
 export default function App() {

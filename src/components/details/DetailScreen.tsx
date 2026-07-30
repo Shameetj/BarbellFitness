@@ -1,27 +1,52 @@
 import React, { useState } from 'react';
 import {
-  StyleSheet,
-  Text,
-  TextInput,
-  TouchableOpacity,
-  View,
-  Alert,
+  StyleSheet, Text, TextInput, TouchableOpacity, View, Alert, Platform, Image
 } from 'react-native';
-import { useFonts, Inter_400Regular, Inter_700Bold } from '@expo-google-fonts/inter';
+import { useFonts, BebasNeue_400Regular } from '@expo-google-fonts/bebas-neue';
+import { Oswald_400Regular, Oswald_600SemiBold, Oswald_700Bold } from '@expo-google-fonts/oswald';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import DateTimePicker from '@react-native-community/datetimepicker';
+import * as ImagePicker from 'expo-image-picker';
 
 export default function DetailScreen({ navigation }: any) {
-  const [fontsLoaded] = useFonts({ Inter_400Regular, Inter_700Bold });
+  const [fontsLoaded] = useFonts({ BebasNeue_400Regular, Oswald_400Regular, Oswald_600SemiBold, Oswald_700Bold });
 
   const [fullName, setFullName] = useState('');
   const [phoneNumber, setPhoneNumber] = useState('');
   const [dateOfBirth, setDateOfBirth] = useState('');
+  const [showDatePicker, setShowDatePicker] = useState(false);
   const [address, setAddress] = useState('');
+  const [profileImage, setProfileImage] = useState<string | null>(null);
 
   if (!fontsLoaded) return null;
 
-  const handleProfilePhoto = () => {
-    Alert.alert('Profile Photo', 'Feature to upload a profile photo is under development.');
+  const onDateChange = (event: any, selectedDate?: Date) => {
+    setShowDatePicker(false);
+    if (selectedDate) {
+      // Format as YYYY-MM-DD or DD/MM/YYYY
+      const formattedDate = selectedDate.toISOString().split('T')[0];
+      setDateOfBirth(formattedDate);
+    }
+  };
+
+  const handleProfilePhoto = async () => {
+    const permissionResult = await ImagePicker.requestCameraPermissionsAsync();
+    if (permissionResult.granted === false) {
+      Alert.alert('Permission Denied', 'You need to allow camera access to take a photo.');
+      return;
+    }
+
+    const result = await ImagePicker.launchCameraAsync({
+      allowsEditing: true,
+      aspect: [1, 1],
+      quality: 0.8,
+    });
+
+    if (!result.canceled && result.assets?.[0]?.uri) {
+      const uri = result.assets[0].uri;
+      setProfileImage(uri);
+      await AsyncStorage.setItem('user_profile_image', uri);
+    }
   };
 
   const persistProfile = async (profile: object) => {
@@ -45,10 +70,8 @@ export default function DetailScreen({ navigation }: any) {
       address: address.trim(),
     };
 
-    // Save to AsyncStorage so Profile tab can read later
     await persistProfile(profile);
 
-    // Navigate to Main -> Profile tab and pass params so Profile shows immediately
     navigation.navigate('MemberPlan', {
       screen: 'Profile',
       params: profile,
@@ -64,57 +87,51 @@ export default function DetailScreen({ navigation }: any) {
       <View style={styles.borderBox}>
         <Text style={styles.heading}>PROFILE INFORMATION</Text>
 
-        <View style={styles.mainBox}>
-          <TextInput
-            style={styles.BoxText}
-            placeholder="FULL NAME"
-            placeholderTextColor="black"
-            value={fullName}
-            onChangeText={setFullName}
+        <TextInput style={styles.BoxText} placeholder="FULL NAME" placeholderTextColor="black" value={fullName} onChangeText={setFullName} />
+        <TextInput style={styles.BoxText} placeholder="PHONE NUMBER" placeholderTextColor="black" keyboardType="phone-pad" value={phoneNumber} onChangeText={setPhoneNumber} />
+        {Platform.OS === 'web' ? (
+          <TextInput 
+            style={styles.BoxText} 
+            placeholder="DATE OF BIRTH (YYYY-MM-DD)" 
+            placeholderTextColor="black" 
+            value={dateOfBirth} 
+            onChangeText={setDateOfBirth} 
           />
-        </View>
+        ) : (
+          <>
+            <TouchableOpacity style={styles.datePickerButton} onPress={() => setShowDatePicker(true)}>
+              <Text style={[styles.datePickerText, !dateOfBirth && styles.datePickerPlaceholder]}>
+                {dateOfBirth || "DATE OF BIRTH"}
+              </Text>
+            </TouchableOpacity>
+            
+            {showDatePicker && (
+              <DateTimePicker
+                value={dateOfBirth ? new Date(dateOfBirth) : new Date()}
+                mode="date"
+                display="default"
+                onChange={onDateChange}
+                maximumDate={new Date()} // Can't be born in the future
+              />
+            )}
+          </>
+        )}
+        <TextInput style={styles.BoxText} placeholder="ADDRESS" placeholderTextColor="black" value={address} onChangeText={setAddress} />
 
-        <View style={styles.mainBox}>
-          <TextInput
-            style={styles.BoxText}
-            placeholder="PHONE NUMBER"
-            placeholderTextColor="black"
-            keyboardType="phone-pad"
-            value={phoneNumber}
-            onChangeText={setPhoneNumber}
-          />
-        </View>
-
-        <View style={styles.mainBox}>
-          <TextInput
-            style={styles.BoxText}
-            placeholder="DATE OF BIRTH"
-            placeholderTextColor="black"
-            value={dateOfBirth}
-            onChangeText={setDateOfBirth}
-          />
-        </View>
-
-        <View style={styles.mainBox}>
-          <TextInput
-            style={styles.BoxText}
-            placeholder="ADDRESS"
-            placeholderTextColor="black"
-            value={address}
-            onChangeText={setAddress}
-          />
-        </View>
-
-        <TouchableOpacity style={styles.loginBox} onPress={handleProfilePhoto}>
-          <Text style={styles.BoxText}>PROFILE PHOTO</Text>
+        <TouchableOpacity style={profileImage ? styles.imageBox : styles.loginBox} onPress={handleProfilePhoto}>
+          {profileImage ? (
+            <Image source={{ uri: profileImage }} style={styles.photoPreview} />
+          ) : (
+            <Text style={styles.loginBoxText}>PROFILE PHOTO</Text>
+          )}
         </TouchableOpacity>
 
         <TouchableOpacity style={styles.blackBox} onPress={handleNewMembership}>
-          <Text style={styles.text2}>NEW GYM MEMBERSHIP</Text>
+          <Text style={styles.buttonText}>NEW GYM MEMBERSHIP</Text>
         </TouchableOpacity>
 
         <TouchableOpacity style={styles.blackBox} onPress={handleOldMembership}>
-          <Text style={styles.text2}>OLD GYM MEMBER</Text>
+          <Text style={styles.buttonText}>OLD GYM MEMBER</Text>
         </TouchableOpacity>
       </View>
     </View>
@@ -129,78 +146,117 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   borderBox: {
-    borderWidth: 5,
+    borderWidth: 4,
     borderColor: 'black',
     backgroundColor: 'white',
     width: 380,
     height: 840,
-  },
-  mainBox: {
-    borderWidth: 5,
-    borderColor: 'black',
-    backgroundColor: 'white',
-    width: 350,
-    height: 60,
-    marginBottom: 50,
-    alignSelf: 'center',
-  },
-  loginBox: {
-    borderWidth: 5,
-    borderColor: 'black',
-    backgroundColor: 'white',
-    width: 350,
-    height: 60,
-    marginBottom: 15,
-    alignSelf: 'center',
+    borderRadius: 20,
+    overflow: 'hidden',
   },
   BoxText: {
-    padding: 12,
-    fontSize: 20,
+    padding: 14,
+    fontSize: 15,
     fontWeight: 'bold',
     color: 'black',
-    letterSpacing: 4,
-    fontFamily: 'Inter_700Bold',
+    letterSpacing: 2,
+    fontFamily: 'Oswald_600SemiBold',
     textAlign: 'left',
-    width: '100%',
-  },
-  text: {
-    padding: 12,
-    fontSize: 20,
-    fontWeight: 'bold',
-    color: 'black',
-    letterSpacing: 4,
-    fontFamily: 'Inter_700Bold',
-    textAlign: 'center',
-    justifyContent: 'center',
-    width: '100%',
-  },
-  text2: {
-    padding: 12,
-    fontSize: 20,
-    fontWeight: 'bold',
-    color: 'white',
-    letterSpacing: 4,
-    fontFamily: 'Inter_700Bold',
-    textAlign: 'center',
-    justifyContent: 'center',
-    width: '100%',
-  },
-  heading: {
-    padding: 12,
-    fontSize: 22,
-    fontWeight: 'bold',
-    color: 'black',
-    letterSpacing: 4,
-    fontFamily: 'Inter_700Bold',
-    textAlign: 'center',
+    width: 340,
+    height: 58,
+    backgroundColor: 'white',
+    borderWidth: 3,
+    borderColor: 'black',
+    borderRadius: 14,
+    alignSelf: 'center',
     marginBottom: 30,
   },
+  datePickerButton: {
+    padding: 14,
+    width: 340,
+    height: 58,
+    backgroundColor: 'white',
+    borderWidth: 3,
+    borderColor: 'black',
+    borderRadius: 14,
+    alignSelf: 'center',
+    marginBottom: 30,
+    justifyContent: 'center',
+  },
+  datePickerText: {
+    fontSize: 15,
+    fontWeight: 'bold',
+    color: 'black',
+    letterSpacing: 2,
+    fontFamily: 'Oswald_600SemiBold',
+  },
+  datePickerPlaceholder: {
+    color: 'gray',
+  },
+  loginBox: {
+    borderWidth: 3,
+    borderColor: 'black',
+    backgroundColor: 'white',
+    width: 340,
+    height: 58,
+    marginBottom: 15,
+    justifyContent: 'center',
+    alignSelf: 'center',
+    alignItems: 'center',
+    borderRadius: 14,
+  },
+  loginBoxText: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: 'black',
+    letterSpacing: 3,
+    fontFamily: 'BebasNeue_400Regular',
+    textTransform: 'uppercase',
+  },
+  imageBox: {
+    width: 140,
+    height: 140,
+    marginBottom: 15,
+    justifyContent: 'center',
+    alignSelf: 'center',
+    alignItems: 'center',
+    borderRadius: 70,
+    borderWidth: 3,
+    borderColor: 'black',
+    overflow: 'hidden',
+  },
+  photoPreview: {
+    width: '100%',
+    height: '100%',
+  },
   blackBox: {
-    width: 350,
-    height: 60,
+    width: 340,
+    height: 58,
     backgroundColor: 'black',
     justifyContent: 'center',
     alignSelf: 'center',
-    marginTop: 30,
+    marginTop: 20,
+    borderRadius: 16,
+  },
+  buttonText: {
+    padding: 12,
+    fontSize: 24,
+    fontWeight: 'bold',
+    color: 'white',
+    letterSpacing: 6,
+    fontFamily: 'BebasNeue_400Regular',
+    textAlign: 'center',
+    textTransform: 'uppercase',
+  },
+  heading: {
+    padding: 16,
+    fontSize: 32,
+    fontWeight: 'bold',
+    color: 'black',
+    letterSpacing: 3,
+    fontFamily: 'BebasNeue_400Regular',
+    textAlign: 'center',
+    marginBottom: 30,
+    lineHeight: 42,
   },
 });
