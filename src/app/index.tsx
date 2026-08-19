@@ -1,7 +1,7 @@
 
 import React from 'react';
 import { StyleSheet } from 'react-native';
-import { NavigationContainer, NavigationIndependentTree } from '@react-navigation/native';
+import { NavigationContainer } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import LoginScreen from '../components/auth/LoginScreen';
 import SignUpScreen from '../components/auth/SignUpScreen';
@@ -29,7 +29,7 @@ const Stack = createNativeStackNavigator();
 
 export default function App() {
   return (
-    <NavigationIndependentTree>
+    <NavigationContainer>
       <Stack.Navigator id={undefined} initialRouteName="Login">
         <Stack.Screen name="Login" component={LoginScreen} options={{ headerShown: false }} />
         <Stack.Screen name="SignUp" component={SignUpScreen} options={{ headerShown: false }} />
@@ -41,7 +41,7 @@ export default function App() {
         <Stack.Screen name="Main" component={MainScreen} options={{ headerShown: false }} />
 
       </Stack.Navigator>
-    </NavigationIndependentTree>
+    </NavigationContainer>
   );
 }
 

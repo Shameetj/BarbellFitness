@@ -16,7 +16,6 @@ export default function LoginScreen({ navigation }: any) {
   const [error, setError] = useState<string | null>(null);
   const [showPassword, setShowPassword] = useState(false);
 
-  // 🔄 Auto redirect if already logged in
   useEffect(() => {
     const unsub = onAuthStateChanged(auth, user => {
       if (user) {
