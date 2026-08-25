@@ -1,15 +1,39 @@
 import React, { useState } from 'react';
 import {
-  StyleSheet, Text, TextInput, TouchableOpacity, View, Alert, Platform, Image
+  StyleSheet,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View,
+  Alert,
+  Platform,
+  Image,
+  SafeAreaView,
+  ScrollView,
+  KeyboardAvoidingView,
+  useWindowDimensions,
 } from 'react-native';
 import { useFonts, BebasNeue_400Regular } from '@expo-google-fonts/bebas-neue';
 import { Oswald_400Regular, Oswald_600SemiBold, Oswald_700Bold } from '@expo-google-fonts/oswald';
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import * as ImagePicker from 'expo-image-picker';
+import type { NativeStackScreenProps } from '@react-navigation/native-stack';
+import { auth } from '../../FirebaseConfig';
+import { localDateString, saveProfile, saveProfileImage, saveMembership } from '../../lib/userStorage';
+import type { RootStackParamList } from '../../types/navigation';
 
-export default function DetailScreen({ navigation }: any) {
-  const [fontsLoaded] = useFonts({ BebasNeue_400Regular, Oswald_400Regular, Oswald_600SemiBold, Oswald_700Bold });
+type Props = NativeStackScreenProps<RootStackParamList, 'Detail'>;
+
+export default function DetailScreen({ navigation }: Props) {
+  const [fontsLoaded] = useFonts({
+    BebasNeue_400Regular,
+    Oswald_400Regular,
+    Oswald_600SemiBold,
+    Oswald_700Bold,
+  });
+
+  const { width } = useWindowDimensions();
+  const contentWidth = Math.min(width - 32, 420);
 
   const [fullName, setFullName] = useState('');
   const [phoneNumber, setPhoneNumber] = useState('');
@@ -20,12 +44,10 @@ export default function DetailScreen({ navigation }: any) {
 
   if (!fontsLoaded) return null;
 
-  const onDateChange = (event: any, selectedDate?: Date) => {
+  const onDateChange = (_event: unknown, selectedDate?: Date) => {
     setShowDatePicker(false);
     if (selectedDate) {
-      // Format as YYYY-MM-DD or DD/MM/YYYY
-      const formattedDate = selectedDate.toISOString().split('T')[0];
-      setDateOfBirth(formattedDate);
+      setDateOfBirth(localDateString(selectedDate));
     }
   };
 
@@ -43,17 +65,9 @@ export default function DetailScreen({ navigation }: any) {
     });
 
     if (!result.canceled && result.assets?.[0]?.uri) {
-      const uri = result.assets[0].uri;
-      setProfileImage(uri);
-      await AsyncStorage.setItem('user_profile_image', uri);
-    }
-  };
-
-  const persistProfile = async (profile: object) => {
-    try {
-      await AsyncStorage.setItem('user_profile', JSON.stringify(profile));
-    } catch (e) {
-      console.warn('Failed saving profile to storage', e);
+      const uid = auth.currentUser?.uid;
+      if (!uid) throw new Error('You must be signed in to save a photo.');
+      setProfileImage(await saveProfileImage(uid, result.assets[0].uri));
     }
   };
 
@@ -70,193 +84,347 @@ export default function DetailScreen({ navigation }: any) {
       address: address.trim(),
     };
 
-    await persistProfile(profile);
-
-    navigation.navigate('MemberPlan', {
-      screen: 'Profile',
-      params: profile,
-    });
+    const uid = auth.currentUser?.uid;
+    if (!uid) {
+      Alert.alert('Session expired', 'Please sign in again.');
+      navigation.replace('Login');
+      return;
+    }
+    try {
+      await saveProfile(uid, profile);
+      navigation.navigate('MemberPlan');
+    } catch (error) {
+      console.warn('Failed saving profile', error);
+      Alert.alert('Could not save profile', 'Your details were not saved. Please try again.');
+    }
   };
 
-  const handleOldMembership = () => {
-    Alert.alert('Old Membership', 'Feature for old gym members is under development.');
+  const handleOldMembership = async () => {
+    if (!fullName.trim() || !phoneNumber.trim() || !dateOfBirth.trim() || !address.trim()) {
+      Alert.alert('Error', 'Please fill out all fields before proceeding.');
+      return;
+    }
+
+    const profile = {
+      fullName: fullName.trim(),
+      phoneNumber: phoneNumber.trim(),
+      dateOfBirth: dateOfBirth.trim(),
+      address: address.trim(),
+    };
+
+    const uid = auth.currentUser?.uid;
+    if (!uid) {
+      Alert.alert('Session expired', 'Please sign in again.');
+      navigation.replace('Login');
+      return;
+    }
+
+    try {
+      // Save profile
+      await saveProfile(uid, profile);
+
+      // Create a default membership active for 1 year for old gym members
+      const startDate = new Date();
+      const endDate = new Date();
+      endDate.setFullYear(endDate.getFullYear() + 1); // 1 year active plan
+
+      const membership = {
+        plan: 'Standard' as const,
+        startDate: localDateString(startDate),
+        endDate: localDateString(endDate),
+        createdAt: startDate.toISOString(),
+      };
+
+      await saveMembership(uid, membership);
+
+      // Reset navigation stack to Main screen
+      navigation.reset({
+        index: 0,
+        routes: [{ name: 'Main' }],
+      });
+    } catch (error) {
+      console.warn('Failed saving profile/membership', error);
+      Alert.alert('Error', 'Could not retrieve old membership details. Please try again.');
+    }
   };
 
   return (
-    <View style={styles.container}>
-      <View style={styles.borderBox}>
-        <Text style={styles.heading}>PROFILE INFORMATION</Text>
+      <SafeAreaView style={styles.safeArea}>
+        <KeyboardAvoidingView
+            style={styles.keyboardView}
+            behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        >
+          <ScrollView
+              contentContainerStyle={[styles.scrollContent, { width: contentWidth }]}
+              keyboardShouldPersistTaps="handled"
+              showsVerticalScrollIndicator={false}
+          >
+            <View style={styles.card}>
+              <View style={styles.header}>
+                <Text style={styles.heading}>PROFILE</Text>
+                <Text style={styles.subHeading}>MEMBER INFORMATION</Text>
+              </View>
 
-        <TextInput style={styles.BoxText} placeholder="FULL NAME" placeholderTextColor="black" value={fullName} onChangeText={setFullName} />
-        <TextInput style={styles.BoxText} placeholder="PHONE NUMBER" placeholderTextColor="black" keyboardType="phone-pad" value={phoneNumber} onChangeText={setPhoneNumber} />
-        {Platform.OS === 'web' ? (
-          <TextInput 
-            style={styles.BoxText} 
-            placeholder="DATE OF BIRTH (YYYY-MM-DD)" 
-            placeholderTextColor="black" 
-            value={dateOfBirth} 
-            onChangeText={setDateOfBirth} 
-          />
-        ) : (
-          <>
-            <TouchableOpacity style={styles.datePickerButton} onPress={() => setShowDatePicker(true)}>
-              <Text style={[styles.datePickerText, !dateOfBirth && styles.datePickerPlaceholder]}>
-                {dateOfBirth || "DATE OF BIRTH"}
-              </Text>
-            </TouchableOpacity>
-            
-            {showDatePicker && (
-              <DateTimePicker
-                value={dateOfBirth ? new Date(dateOfBirth) : new Date()}
-                mode="date"
-                display="default"
-                onChange={onDateChange}
-                maximumDate={new Date()} // Can't be born in the future
-              />
-            )}
-          </>
-        )}
-        <TextInput style={styles.BoxText} placeholder="ADDRESS" placeholderTextColor="black" value={address} onChangeText={setAddress} />
+              <View style={styles.form}>
+                <Text style={styles.label}>FULL NAME</Text>
+                <TextInput
+                    style={styles.input}
+                    placeholder="Enter full name"
+                    placeholderTextColor="#8A8A8A"
+                    value={fullName}
+                    onChangeText={setFullName}
+                    autoCapitalize="words"
+                />
 
-        <TouchableOpacity style={profileImage ? styles.imageBox : styles.loginBox} onPress={handleProfilePhoto}>
-          {profileImage ? (
-            <Image source={{ uri: profileImage }} style={styles.photoPreview} />
-          ) : (
-            <Text style={styles.loginBoxText}>PROFILE PHOTO</Text>
-          )}
-        </TouchableOpacity>
+                <Text style={styles.label}>PHONE NUMBER</Text>
+                <TextInput
+                    style={styles.input}
+                    placeholder="Enter phone number"
+                    placeholderTextColor="#8A8A8A"
+                    keyboardType="phone-pad"
+                    value={phoneNumber}
+                    onChangeText={setPhoneNumber}
+                />
 
-        <TouchableOpacity style={styles.blackBox} onPress={handleNewMembership}>
-          <Text style={styles.buttonText}>NEW GYM MEMBERSHIP</Text>
-        </TouchableOpacity>
+                <Text style={styles.label}>DATE OF BIRTH</Text>
+                {Platform.OS === 'web' ? (
+                    <TextInput
+                        style={styles.input}
+                        placeholder="YYYY-MM-DD"
+                        placeholderTextColor="#8A8A8A"
+                        value={dateOfBirth}
+                        onChangeText={setDateOfBirth}
+                    />
+                ) : (
+                    <>
+                      <TouchableOpacity
+                          style={styles.input}
+                          onPress={() => setShowDatePicker(true)}
+                          activeOpacity={0.75}
+                      >
+                        <Text style={dateOfBirth ? styles.inputText : styles.placeholderText}>
+                          {dateOfBirth || 'Select date of birth'}
+                        </Text>
+                      </TouchableOpacity>
 
-        <TouchableOpacity style={styles.blackBox} onPress={handleOldMembership}>
-          <Text style={styles.buttonText}>OLD GYM MEMBER</Text>
-        </TouchableOpacity>
-      </View>
-    </View>
+                      {showDatePicker && (
+                          <DateTimePicker
+                              value={dateOfBirth ? new Date(`${dateOfBirth}T00:00:00`) : new Date()}
+                              mode="date"
+                              display="default"
+                              onChange={onDateChange}
+                              maximumDate={new Date()}
+                          />
+                      )}
+                    </>
+                )}
+
+                <Text style={styles.label}>ADDRESS</Text>
+                <TextInput
+                    style={[styles.input, styles.addressInput]}
+                    placeholder="Enter address"
+                    placeholderTextColor="#8A8A8A"
+                    value={address}
+                    onChangeText={setAddress}
+                    multiline
+                    textAlignVertical="top"
+                />
+
+                <Text style={styles.label}>PROFILE PHOTO</Text>
+                <TouchableOpacity
+                    style={styles.photoButton}
+                    onPress={handleProfilePhoto}
+                    activeOpacity={0.8}
+                >
+                  {profileImage ? (
+                      <Image source={{ uri: profileImage }} style={styles.photoPreview} />
+                  ) : (
+                      <>
+                        <Text style={styles.cameraIcon}>+</Text>
+                        <Text style={styles.photoButtonText}>ADD PHOTO</Text>
+                        <Text style={styles.photoHint}>Tap to open camera</Text>
+                      </>
+                  )}
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                    style={styles.primaryButton}
+                    onPress={handleNewMembership}
+                    activeOpacity={0.8}
+                >
+                  <Text style={styles.primaryButtonText}>NEW MEMBERSHIP</Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                    style={styles.secondaryButton}
+                    onPress={handleOldMembership}
+                    activeOpacity={0.8}
+                >
+                  <Text style={styles.secondaryButtonText}>OLD GYM MEMBER</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          </ScrollView>
+        </KeyboardAvoidingView>
+      </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
+  safeArea: {
     flex: 1,
-    backgroundColor: 'white',
+    backgroundColor: '#F2F2F2',
+  },
+  keyboardView: {
+    flex: 1,
     alignItems: 'center',
-    justifyContent: 'center',
   },
-  borderBox: {
-    borderWidth: 4,
-    borderColor: 'black',
-    backgroundColor: 'white',
-    width: 380,
-    height: 840,
-    borderRadius: 20,
-    overflow: 'hidden',
+  scrollContent: {
+    paddingTop: 16,
+    paddingBottom: 32,
   },
-  BoxText: {
-    padding: 14,
-    fontSize: 15,
-    fontWeight: 'bold',
-    color: 'black',
-    letterSpacing: 2,
-    fontFamily: 'Oswald_600SemiBold',
-    textAlign: 'left',
-    width: 340,
-    height: 58,
-    backgroundColor: 'white',
-    borderWidth: 3,
-    borderColor: 'black',
-    borderRadius: 14,
-    alignSelf: 'center',
-    marginBottom: 30,
+  card: {
+    width: '100%',
+    backgroundColor: '#FFFFFF',
+    borderRadius: 22,
+    paddingHorizontal: 18,
+    paddingTop: 20,
+    paddingBottom: 22,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.12,
+    shadowRadius: 10,
+    elevation: 5,
   },
-  datePickerButton: {
-    padding: 14,
-    width: 340,
-    height: 58,
-    backgroundColor: 'white',
-    borderWidth: 3,
-    borderColor: 'black',
-    borderRadius: 14,
-    alignSelf: 'center',
-    marginBottom: 30,
-    justifyContent: 'center',
-  },
-  datePickerText: {
-    fontSize: 15,
-    fontWeight: 'bold',
-    color: 'black',
-    letterSpacing: 2,
-    fontFamily: 'Oswald_600SemiBold',
-  },
-  datePickerPlaceholder: {
-    color: 'gray',
-  },
-  loginBox: {
-    borderWidth: 3,
-    borderColor: 'black',
-    backgroundColor: 'white',
-    width: 340,
-    height: 58,
-    marginBottom: 15,
-    justifyContent: 'center',
-    alignSelf: 'center',
+  header: {
     alignItems: 'center',
-    borderRadius: 14,
+    marginBottom: 20,
   },
-  loginBoxText: {
-    fontSize: 18,
-    fontWeight: 'bold',
-    color: 'black',
-    letterSpacing: 3,
+  heading: {
     fontFamily: 'BebasNeue_400Regular',
-    textTransform: 'uppercase',
+    fontSize: 38,
+    letterSpacing: 3,
+    color: '#111111',
+    lineHeight: 42,
   },
-  imageBox: {
-    width: 140,
-    height: 140,
+  subHeading: {
+    marginTop: 2,
+    fontFamily: 'Oswald_600SemiBold',
+    fontSize: 13,
+    letterSpacing: 2.5,
+    color: '#777777',
+  },
+  form: {
+    width: '100%',
+  },
+  label: {
+    fontFamily: 'Oswald_700Bold',
+    fontSize: 13,
+    letterSpacing: 1.8,
+    color: '#222222',
+    marginBottom: 7,
+    marginLeft: 3,
+  },
+  input: {
+    width: '100%',
+    minHeight: 52,
+    backgroundColor: '#F8F8F8',
+    borderWidth: 1.5,
+    borderColor: '#D0D0D0',
+    borderRadius: 12,
+    paddingHorizontal: 14,
     marginBottom: 15,
+    fontFamily: 'Oswald_400Regular',
+    fontSize: 16,
+    color: '#111111',
     justifyContent: 'center',
-    alignSelf: 'center',
+  },
+  inputText: {
+    fontFamily: 'Oswald_400Regular',
+    fontSize: 16,
+    color: '#111111',
+  },
+  placeholderText: {
+    fontFamily: 'Oswald_400Regular',
+    fontSize: 16,
+    color: '#8A8A8A',
+  },
+  addressInput: {
+    height: 78,
+    paddingTop: 13,
+    paddingBottom: 13,
+  },
+  photoButton: {
+    width: '100%',
+    height: 120,
+    borderRadius: 14,
+    borderWidth: 1.5,
+    borderColor: '#D0D0D0',
+    borderStyle: 'dashed',
+    backgroundColor: '#F8F8F8',
     alignItems: 'center',
-    borderRadius: 70,
-    borderWidth: 3,
-    borderColor: 'black',
+    justifyContent: 'center',
     overflow: 'hidden',
+    marginBottom: 20,
+  },
+  cameraIcon: {
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    backgroundColor: '#111111',
+    color: '#FFFFFF',
+    textAlign: 'center',
+    lineHeight: 32,
+    fontSize: 28,
+    fontFamily: 'Oswald_400Regular',
+    marginBottom: 5,
+  },
+  photoButtonText: {
+    fontFamily: 'BebasNeue_400Regular',
+    fontSize: 20,
+    letterSpacing: 2,
+    color: '#111111',
+  },
+  photoHint: {
+    fontFamily: 'Oswald_400Regular',
+    fontSize: 12,
+    color: '#888888',
+    marginTop: 1,
   },
   photoPreview: {
     width: '100%',
     height: '100%',
+    resizeMode: 'cover',
   },
-  blackBox: {
-    width: 340,
-    height: 58,
-    backgroundColor: 'black',
+  primaryButton: {
+    width: '100%',
+    minHeight: 56,
+    borderRadius: 14,
+    backgroundColor: '#111111',
+    alignItems: 'center',
     justifyContent: 'center',
-    alignSelf: 'center',
-    marginTop: 20,
-    borderRadius: 16,
+    marginBottom: 11,
   },
-  buttonText: {
-    padding: 12,
-    fontSize: 24,
-    fontWeight: 'bold',
-    color: 'white',
-    letterSpacing: 6,
+  primaryButtonText: {
     fontFamily: 'BebasNeue_400Regular',
-    textAlign: 'center',
-    textTransform: 'uppercase',
-  },
-  heading: {
-    padding: 16,
-    fontSize: 32,
-    fontWeight: 'bold',
-    color: 'black',
+    fontSize: 25,
     letterSpacing: 3,
+    color: '#FFFFFF',
+  },
+  secondaryButton: {
+    width: '100%',
+    minHeight: 56,
+    borderRadius: 14,
+    backgroundColor: '#FFFFFF',
+    borderWidth: 2,
+    borderColor: '#111111',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  secondaryButtonText: {
     fontFamily: 'BebasNeue_400Regular',
-    textAlign: 'center',
-    marginBottom: 30,
-    lineHeight: 42,
+    fontSize: 23,
+    letterSpacing: 2.5,
+    color: '#111111',
   },
 });

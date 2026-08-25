@@ -7,9 +7,15 @@ import { Oswald_400Regular, Oswald_600SemiBold, Oswald_700Bold } from '@expo-goo
 import { createUserWithEmailAndPassword, updateProfile, signInWithCredential, GoogleAuthProvider } from 'firebase/auth';
 import { auth } from '../../FirebaseConfig';
 import * as Google from 'expo-auth-session/providers/google';
+import * as WebBrowser from 'expo-web-browser';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import type { NativeStackScreenProps } from '@react-navigation/native-stack';
+import type { RootStackParamList } from '../../types/navigation';
 
-export default function SignUpScreen({ navigation }: any) {
+WebBrowser.maybeCompleteAuthSession();
+
+type Props = NativeStackScreenProps<RootStackParamList, 'SignUp'>;
+export default function SignUpScreen({ navigation }: Props) {
   const [fontsLoaded] = useFonts({ BebasNeue_400Regular, Oswald_400Regular, Oswald_600SemiBold, Oswald_700Bold });
   const [username, setUsername] = useState('');
   const [email, setEmail] = useState('');
@@ -19,13 +25,24 @@ export default function SignUpScreen({ navigation }: any) {
   const [error, setError] = useState<string | null>(null);
 
   const [request, response, promptAsync] = Google.useAuthRequest({
-    clientId: '552125531713-ii8l769urh188qhhdqv14hsjklqk0bje.apps.googleusercontent.com',
+    clientId: process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID || '552125531713-ii8l769urh188qhhdqv14hsjklqk0bje.apps.googleusercontent.com',
+    androidClientId: process.env.EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID,
+    iosClientId: process.env.EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID,
+    webClientId: process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID || '552125531713-ii8l769urh188qhhdqv14hsjklqk0bje.apps.googleusercontent.com',
+    redirectUri: 'https://auth.expo.io/@anonymous/barbellfitness',
   });
+
+  useEffect(() => {
+    if (request) {
+      console.log('Google Auth Redirect URI:', request.redirectUri);
+    }
+  }, [request]);
 
   // Google Sign-In response handler
   useEffect(() => {
     if (response?.type === 'success') {
-      const { id_token } = response.params;
+      const id_token = response.params.id_token ?? response.authentication?.idToken;
+      if (!id_token) { setError('Google did not return an ID token. Check the OAuth client IDs.'); return; }
       const credential = GoogleAuthProvider.credential(id_token);
       signInWithCredential(auth, credential)
         .then(async () => {

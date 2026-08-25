@@ -4,7 +4,12 @@
     "module": "esnext",
     "moduleResolution": "bundler",
     "strict": true,
-    "jsx": "react"
+    "jsx": "react",
+    "customConditions": ["react-native"],
+    "baseUrl": ".",
+    "paths": {
+      "@firebase/auth": ["node_modules/@firebase/auth/dist/rn/index.rn.d.ts"]
+    }
   },
   "extends": "expo/tsconfig.base"
 }

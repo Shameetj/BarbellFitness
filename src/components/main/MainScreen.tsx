@@ -7,9 +7,10 @@ import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import ProfileScreen from './ProfileScreen';
 import HomeScreen from './HomeScreen';
+import type { MainTabParamList } from '../../types/navigation';
 
 export default function MainScreen() {
-  const Tab = createBottomTabNavigator();
+  const Tab = createBottomTabNavigator<MainTabParamList>();
   const insets = useSafeAreaInsets();
 
   const [fontsLoaded] = useFonts({
@@ -30,14 +31,12 @@ export default function MainScreen() {
         screenOptions={({ route }) => ({
           headerShown: false,
           tabBarActiveTintColor: 'black',
-          tabBarInactiveTintColor: 'gray',
+          tabBarInactiveTintColor: '#7A7A7A',
           tabBarStyle: [styles.tabBar, { marginBottom: Math.max(insets.bottom, 15) }],
           tabBarItemStyle: styles.tabBarItem,
           tabBarLabelStyle: styles.tabBarLabel,
-          tabBarIcon: ({ focused, color }) => {
-            let iconName: any = 'barbell';
-            if (route.name === 'Home') iconName = focused ? 'barbell' : 'barbell-outline';
-            if (route.name === 'Profile') iconName = focused ? 'person' : 'person-outline';
+          tabBarIcon: ({ color }) => {
+            const iconName = route.name === 'Home' ? 'barbell-outline' : 'person-outline';
             return <Ionicons name={iconName} size={28} color={color} />;
           },
         })}

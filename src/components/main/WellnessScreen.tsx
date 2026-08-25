@@ -1,9 +1,14 @@
-import React from 'react';
-import {StyleSheet, Text, TouchableOpacity, View} from 'react-native';
+import React, { useState } from 'react';
+import {StyleSheet, Text, TouchableOpacity, View, Alert, ActivityIndicator} from 'react-native';
 import { useFonts, BebasNeue_400Regular } from '@expo-google-fonts/bebas-neue';
 import { Oswald_400Regular, Oswald_600SemiBold, Oswald_700Bold } from '@expo-google-fonts/oswald';
+import type { NativeStackScreenProps } from '@react-navigation/native-stack';
+import type { RootStackParamList } from '../../types/navigation';
+import { purchaseMembership } from '../../lib/membership';
 
-export default function WellnessScreen({ navigation }: any) {
+type Props = NativeStackScreenProps<RootStackParamList, 'WellnessPlan'>;
+export default function WellnessScreen({ navigation }: Props) {
+  const [saving, setSaving] = useState(false);
 
   const [fontsLoaded] = useFonts({
     BebasNeue_400Regular,
@@ -16,22 +21,40 @@ export default function WellnessScreen({ navigation }: any) {
     return null;
   }
 
+  const handleBuyNow = async () => {
+    if (saving) return;
+    setSaving(true);
+    try {
+      const membership = await purchaseMembership('Wellness');
+      Alert.alert('Purchased', `Wellness plan active until ${membership.endDate}`, [
+        {
+          text: 'OK',
+          onPress: () => navigation.reset({ index: 0, routes: [{ name: 'Main', params: { screen: 'Home' } }] })
+        }
+      ]);
+    } catch {
+      Alert.alert('Error', 'Failed to complete purchase. Please try again.');
+    } finally {
+      setSaving(false);
+    }
+  };
+
   return (
     <View style={styles.container}>
       <View style={styles.borderBox}>
         <Text style={styles.heading}>MEMBERSHIP PLANS</Text>
-        <Text style={styles.heading}>🧘‍♀️ Zumba, Yoga, Cardio & Dance Plan Includes:</Text>
+        <Text style={styles.heading}>🧘‍♀️ Zumba, Yoga, Cardio & Women-Friendly Wellness Plan Includes:</Text>
 
-        <Text style={styles.text}>• Unlimited access to Zumba, yoga, cardio, and dance classes</Text>
-        <Text style={styles.text}>• Certified instructors for each class style</Text>
-        <Text style={styles.text}>• Dedicated studio space with mirrors and sound system</Text>
-        <Text style={styles.text}>• Free monthly wellness workshop (stretching, breathing, posture)</Text>
-        <Text style={styles.text}>• Locker access</Text>
-        <Text style={styles.text}>• Priority booking for popular class slots</Text>
-        <Text style={styles.text}>• Access to recovery zone with mats and foam rollers</Text>
+        <Text style={styles.text}>• Unlimited Zumba, yoga, cardio, and dance sessions</Text>
+        <Text style={styles.text}>• Safe, women-friendly, and supportive studio space</Text>
+        <Text style={styles.text}>• Certified instructors with dedicated specialized batches</Text>
+        <Text style={styles.text}>• Specialized high-energy cardio & core workouts</Text>
+        <Text style={styles.text}>• Free monthly posture, breathing, and stretching workshops</Text>
+        <Text style={styles.text}>• Premium private studio space with high-quality mats and gear</Text>
+        <Text style={styles.text}>• Priority locker access and booking slots</Text>
 
-        <TouchableOpacity style={styles.blackBox} onPress={() => navigation.navigate('WellnessPlan')}>
-          <Text style={styles.buttonText}>BUY NOW!</Text>
+        <TouchableOpacity style={styles.blackBox} onPress={handleBuyNow} disabled={saving}>
+          {saving ? <ActivityIndicator color="white" /> : <Text style={styles.buttonText}>BUY NOW!</Text>}
         </TouchableOpacity>
       </View>
     </View>

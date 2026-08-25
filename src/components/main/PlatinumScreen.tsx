@@ -6,9 +6,10 @@ import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import type { RootStackParamList } from '../../types/navigation';
 import { purchaseMembership } from '../../lib/membership';
 
-type Props = NativeStackScreenProps<RootStackParamList, 'BasicPlan'>;
-export default function BasicScreen({ navigation }: Props) {
+type Props = NativeStackScreenProps<RootStackParamList, 'PlatinumPlan'>;
+export default function PlatinumScreen({ navigation }: Props) {
   const [saving, setSaving] = useState(false);
+
   const [fontsLoaded] = useFonts({
     BebasNeue_400Regular,
     Oswald_400Regular,
@@ -16,41 +17,41 @@ export default function BasicScreen({ navigation }: Props) {
     Oswald_700Bold,
   });
 
-  if (!fontsLoaded) return null;
+  if (!fontsLoaded) {
+    return null;
+  }
 
   const handleBuyNow = async () => {
     if (saving) return;
     setSaving(true);
     try {
-      const membership = await purchaseMembership('Basic');
-
-      Alert.alert('Purchased', `Basic plan active until ${membership.endDate}`, [
+      const membership = await purchaseMembership('Platinum');
+      Alert.alert('Purchased', `Platinum plan active until ${membership.endDate}`, [
         {
           text: 'OK',
-          onPress: () => {
-            navigation.reset({ index: 0, routes: [{ name: 'Main', params: { screen: 'Home' } }] });
-          },
-        },
+          onPress: () => navigation.reset({ index: 0, routes: [{ name: 'Main', params: { screen: 'Home' } }] })
+        }
       ]);
-    } catch (err) {
+    } catch {
       Alert.alert('Error', 'Failed to complete purchase. Please try again.');
-      console.error(err);
-    } finally { setSaving(false); }
+    } finally {
+      setSaving(false);
+    }
   };
 
   return (
     <View style={styles.container}>
       <View style={styles.borderBox}>
         <Text style={styles.heading}>MEMBERSHIP PLANS</Text>
-        <Text style={styles.heading}>✅ Basic Gym Membership Includes:</Text>
+        <Text style={styles.heading}>🏆 1-Year Platinum Gym Membership Includes:</Text>
 
-        <Text style={styles.text}>• Access to treadmills, bikes, and ellipticals</Text>
-        <Text style={styles.text}>• Use of dumbbells, benches, and resistance machines</Text>
-        <Text style={styles.text}>• Free fitness orientation with a trainer</Text>
-        <Text style={styles.text}>• Clean locker rooms and showers</Text>
-        <Text style={styles.text}>• Entry during staffed hours</Text>
-        <Text style={styles.text}>• Member app for workout tracking</Text>
-        <Text style={styles.text}>• Discounts on personal training and upgrades</Text>
+        <Text style={styles.text}>• Unlimited 24/7 access to gym equipment and facility</Text>
+        <Text style={styles.text}>• Personalized workout & nutrition plans from elite coaches</Text>
+        <Text style={styles.text}>• Unlimited access to all group classes (Yoga, Zumba, Cardio)</Text>
+        <Text style={styles.text}>• Dedicated personal trainer (4 private sessions per month)</Text>
+        <Text style={styles.text}>• Premium locker access</Text>
+        <Text style={styles.text}>• Free guest passes (3 guest invitations per month)</Text>
+
 
         <TouchableOpacity style={styles.blackBox} onPress={handleBuyNow} disabled={saving}>
           {saving ? <ActivityIndicator color="white" /> : <Text style={styles.buttonText}>BUY NOW!</Text>}
@@ -58,7 +59,7 @@ export default function BasicScreen({ navigation }: Props) {
       </View>
     </View>
   );
-}
+};
 
 const styles = StyleSheet.create({
   container: {

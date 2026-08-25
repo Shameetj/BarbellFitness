@@ -1,4 +1,19 @@
 {
     "java.configuration.updateBuildConfiguration": "interactive",
-    "java.compile.nullAnalysis.mode": "automatic"
+    "java.compile.nullAnalysis.mode": "automatic",
+    "java.import.gradle.java.home": "C:/Program Files/Microsoft/jdk-17.0.16.8-hotspot",
+    "gradle.java.home": "C:/Program Files/Microsoft/jdk-17.0.16.8-hotspot",
+    "java.jdt.ls.java.home": "C:/Program Files/Microsoft/jdk-17.0.16.8-hotspot",
+    "java.project.excludeFilters": [
+        "**/node_modules/**",
+        "**/bin/**",
+        "**/out/**"
+    ],
+    "java.configuration.runtimes": [
+        {
+            "name": "JavaSE-17",
+            "path": "C:/Program Files/Microsoft/jdk-17.0.16.8-hotspot",
+            "default": true
+        }
+    ]
 }

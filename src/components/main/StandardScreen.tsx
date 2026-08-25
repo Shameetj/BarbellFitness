@@ -1,9 +1,14 @@
-import React from 'react';
-import {StyleSheet, Text, TouchableOpacity, View} from 'react-native';
+import React, { useState } from 'react';
+import {StyleSheet, Text, TouchableOpacity, View, Alert, ActivityIndicator} from 'react-native';
 import { useFonts, BebasNeue_400Regular } from '@expo-google-fonts/bebas-neue';
 import { Oswald_400Regular, Oswald_600SemiBold, Oswald_700Bold } from '@expo-google-fonts/oswald';
+import type { NativeStackScreenProps } from '@react-navigation/native-stack';
+import type { RootStackParamList } from '../../types/navigation';
+import { purchaseMembership } from '../../lib/membership';
 
-export default function StandardScreen({ navigation }: any) {
+type Props = NativeStackScreenProps<RootStackParamList, 'StandardPlan'>;
+export default function StandardScreen({ navigation }: Props) {
+  const [saving, setSaving] = useState(false);
 
   const [fontsLoaded] = useFonts({
     BebasNeue_400Regular,
@@ -15,6 +20,12 @@ export default function StandardScreen({ navigation }: any) {
   if (!fontsLoaded) {
     return null;
   }
+  const handleBuyNow = async () => {
+    if (saving) return; setSaving(true);
+    try { const membership = await purchaseMembership('Standard'); Alert.alert('Purchased', `Standard plan active until ${membership.endDate}`, [{ text: 'OK', onPress: () => navigation.reset({ index: 0, routes: [{ name: 'Main', params: { screen: 'Home' } }] }) }]); }
+    catch { Alert.alert('Error', 'Failed to complete purchase. Please try again.'); }
+    finally { setSaving(false); }
+  };
 
   return (
     <View style={styles.container}>
@@ -30,8 +41,8 @@ export default function StandardScreen({ navigation }: any) {
         <Text style={styles.text}>• Extended hours access including early mornings and late evenings</Text>
         <Text style={styles.text}>• 10% off supplements and gear at our gym shop</Text>
 
-        <TouchableOpacity style={styles.blackBox} onPress={() => navigation.navigate('StandardPlan')}>
-          <Text style={styles.buttonText}>BUY NOW!</Text>
+        <TouchableOpacity style={styles.blackBox} onPress={handleBuyNow} disabled={saving}>
+          {saving ? <ActivityIndicator color="white" /> : <Text style={styles.buttonText}>BUY NOW!</Text>}
         </TouchableOpacity>
       </View>
     </View>

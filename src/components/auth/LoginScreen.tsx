@@ -1,29 +1,47 @@
-import React, { useEffect, useState } from 'react';
+import React, { useState } from 'react';
 import {
   StyleSheet, Text, TextInput, TouchableOpacity, View, Image, ActivityIndicator
 } from 'react-native';
 import { useFonts, BebasNeue_400Regular } from '@expo-google-fonts/bebas-neue';
 import { Oswald_400Regular, Oswald_600SemiBold, Oswald_700Bold } from '@expo-google-fonts/oswald';
-import { signInWithEmailAndPassword, onAuthStateChanged } from 'firebase/auth';
+import { signInWithCredential, signInWithEmailAndPassword, GoogleAuthProvider } from 'firebase/auth';
 import { auth } from '../../FirebaseConfig'; // adjust path if needed
 import { Ionicons } from '@expo/vector-icons';
+import type { NativeStackScreenProps } from '@react-navigation/native-stack';
+import type { RootStackParamList } from '../../types/navigation';
+import * as Google from 'expo-auth-session/providers/google';
+import * as WebBrowser from 'expo-web-browser';
 
-export default function LoginScreen({ navigation }: any) {
+WebBrowser.maybeCompleteAuthSession();
+
+type Props = NativeStackScreenProps<RootStackParamList, 'Login'>;
+export default function LoginScreen({ navigation }: Props) {
   const [fontsLoaded] = useFonts({ BebasNeue_400Regular, Oswald_400Regular, Oswald_600SemiBold, Oswald_700Bold });
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [showPassword, setShowPassword] = useState(false);
+  const [request, response, promptAsync] = Google.useAuthRequest({
+    clientId: process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID || '552125531713-ii8l769urh188qhhdqv14hsjklqk0bje.apps.googleusercontent.com',
+    androidClientId: process.env.EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID,
+    iosClientId: process.env.EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID,
+    webClientId: process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID || '552125531713-ii8l769urh188qhhdqv14hsjklqk0bje.apps.googleusercontent.com',
+    redirectUri: 'https://auth.expo.io/@anonymous/barbellfitness',
+  });
 
-  useEffect(() => {
-    const unsub = onAuthStateChanged(auth, user => {
-      if (user) {
-        navigation.replace('Detail');
-      }
-    });
-    return unsub;
-  }, [navigation]);
+  React.useEffect(() => {
+    if (request) {
+      console.log('Google Auth Redirect URI:', request.redirectUri);
+    }
+  }, [request]);
+
+  React.useEffect(() => {
+    if (response?.type !== 'success') return;
+    const idToken = response.params.id_token ?? response.authentication?.idToken;
+    if (!idToken) { setError('Google did not return an ID token. Check the OAuth client IDs.'); return; }
+    signInWithCredential(auth, GoogleAuthProvider.credential(idToken)).catch(() => setError('Google sign-in failed. Try again.'));
+  }, [response]);
 
   if (!fontsLoaded) return null;
 
@@ -36,7 +54,7 @@ export default function LoginScreen({ navigation }: any) {
     setLoading(true);
     try {
       await signInWithEmailAndPassword(auth, email.trim(), password);
-      // navigation.replace('Detail'); // optional, since onAuthStateChanged handles it
+      // The root auth gate selects Detail or Main after the persisted state updates.
     } catch (err: any) {
       const code = err.code ?? err.message;
       if (code.includes('auth/user-not-found')) setError('No account found for that email.');
@@ -60,6 +78,8 @@ export default function LoginScreen({ navigation }: any) {
             placeholderTextColor="black"
             keyboardType="email-address"
             autoCapitalize="none"
+            autoComplete="off"
+            importantForAutofill="no"
             value={email}
             onChangeText={setEmail} />
           <View style={styles.passwordRow}>
@@ -68,6 +88,8 @@ export default function LoginScreen({ navigation }: any) {
               placeholder="ENTER PASSWORD"
               placeholderTextColor="black"
               secureTextEntry={!showPassword}
+              autoComplete="off"
+              importantForAutofill="no"
               value={password}
               onChangeText={setPassword}
             />
@@ -86,7 +108,7 @@ export default function LoginScreen({ navigation }: any) {
         </TouchableOpacity>
 
         <TouchableOpacity style={styles.link} onPress={() => navigation.navigate('SignUp')}>
-          <Text style={styles.link}>Don't have an account?{'\n'}Click to sign up</Text>
+          <Text style={styles.link}>Don&apos;t have an account?{'\n'}Click to sign up</Text>
         </TouchableOpacity>
 
         <View style={styles.line} />
@@ -94,7 +116,7 @@ export default function LoginScreen({ navigation }: any) {
         <Text style={styles.orText}>or login with</Text>
 
         <View style={styles.socialContainer}>
-          <TouchableOpacity style={styles.iconBox}>
+          <TouchableOpacity style={styles.iconBox} onPress={() => promptAsync()} disabled={!request}>
             <Image source={require('./assets/google.png')} style={styles.icon} />
           </TouchableOpacity>
           <TouchableOpacity style={styles.iconBox}>
@@ -284,7 +306,7 @@ const styles = StyleSheet.create({
 
   blackBox: {
     width: 340,
-    height: 300,
+    height: 180,
     backgroundColor: 'black',
     justifyContent: 'center',
     alignSelf: 'center',
