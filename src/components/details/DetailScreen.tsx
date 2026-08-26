@@ -19,7 +19,7 @@ import DateTimePicker from '@react-native-community/datetimepicker';
 import * as ImagePicker from 'expo-image-picker';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { auth } from '../../FirebaseConfig';
-import { localDateString, saveProfile, saveProfileImage, saveMembership } from '../../lib/userStorage';
+import { localDateString, saveProfile, saveProfileImage, saveMembership, getProfile, getMembership } from '../../lib/userStorage';
 import type { RootStackParamList } from '../../types/navigation';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Detail'>;
@@ -41,6 +41,8 @@ export default function DetailScreen({ navigation }: Props) {
   const [showDatePicker, setShowDatePicker] = useState(false);
   const [address, setAddress] = useState('');
   const [profileImage, setProfileImage] = useState<string | null>(null);
+  const [age, setAge] = useState('');
+  const [gender, setGender] = useState('Male');
 
   if (!fontsLoaded) return null;
 
@@ -72,7 +74,7 @@ export default function DetailScreen({ navigation }: Props) {
   };
 
   const handleNewMembership = async () => {
-    if (!fullName.trim() || !phoneNumber.trim() || !dateOfBirth.trim() || !address.trim()) {
+    if (!fullName.trim() || !phoneNumber.trim() || !dateOfBirth.trim() || !address.trim() || !age.trim()) {
       Alert.alert('Error', 'Please fill out all fields before proceeding.');
       return;
     }
@@ -82,6 +84,8 @@ export default function DetailScreen({ navigation }: Props) {
       phoneNumber: phoneNumber.trim(),
       dateOfBirth: dateOfBirth.trim(),
       address: address.trim(),
+      age: age.trim(),
+      gender: gender,
     };
 
     const uid = auth.currentUser?.uid;
@@ -100,18 +104,6 @@ export default function DetailScreen({ navigation }: Props) {
   };
 
   const handleOldMembership = async () => {
-    if (!fullName.trim() || !phoneNumber.trim() || !dateOfBirth.trim() || !address.trim()) {
-      Alert.alert('Error', 'Please fill out all fields before proceeding.');
-      return;
-    }
-
-    const profile = {
-      fullName: fullName.trim(),
-      phoneNumber: phoneNumber.trim(),
-      dateOfBirth: dateOfBirth.trim(),
-      address: address.trim(),
-    };
-
     const uid = auth.currentUser?.uid;
     if (!uid) {
       Alert.alert('Session expired', 'Please sign in again.');
@@ -120,13 +112,40 @@ export default function DetailScreen({ navigation }: Props) {
     }
 
     try {
-      // Save profile
+      // Check if an existing profile already exists for this user
+      const existingProfile = await getProfile(uid);
+      const existingMembership = await getMembership(uid);
+
+      if (existingProfile && existingMembership) {
+        // Old account found — go straight to home
+        navigation.reset({
+          index: 0,
+          routes: [{ name: 'Main' }],
+        });
+        return;
+      }
+
+      // No existing data found — require form fields
+      if (!fullName.trim() || !phoneNumber.trim() || !dateOfBirth.trim() || !address.trim() || !age.trim()) {
+        Alert.alert('Error', 'No existing account found. Please fill out all fields to continue.');
+        return;
+      }
+
+      const profile = {
+        fullName: fullName.trim(),
+        phoneNumber: phoneNumber.trim(),
+        dateOfBirth: dateOfBirth.trim(),
+        address: address.trim(),
+        age: age.trim(),
+        gender: gender,
+      };
+
       await saveProfile(uid, profile);
 
       // Create a default membership active for 1 year for old gym members
       const startDate = new Date();
       const endDate = new Date();
-      endDate.setFullYear(endDate.getFullYear() + 1); // 1 year active plan
+      endDate.setFullYear(endDate.getFullYear() + 1);
 
       const membership = {
         plan: 'Standard' as const,
@@ -137,7 +156,6 @@ export default function DetailScreen({ navigation }: Props) {
 
       await saveMembership(uid, membership);
 
-      // Reset navigation stack to Main screen
       navigation.reset({
         index: 0,
         routes: [{ name: 'Main' }],
@@ -219,6 +237,44 @@ export default function DetailScreen({ navigation }: Props) {
                     </>
                 )}
 
+                <View style={{ flexDirection: 'row', marginBottom: 15, marginTop: 15 }}>
+                  <View style={{ flex: 1, marginRight: 8 }}>
+                    <Text style={styles.label}>AGE</Text>
+                    <TextInput
+                        style={styles.input}
+                        placeholder="e.g. 25"
+                        placeholderTextColor="#8A8A8A"
+                        keyboardType="numeric"
+                        value={age}
+                        onChangeText={setAge}
+                    />
+                  </View>
+                  <View style={{ flex: 1, marginLeft: 8 }}>
+                    <Text style={styles.label}>GENDER</Text>
+                    <View style={styles.genderRow}>
+                      {['Male', 'Female'].map(g => (
+                        <TouchableOpacity
+                          key={g}
+                          style={[
+                            styles.genderOption,
+                            gender === g && styles.genderOptionSelected,
+                          ]}
+                          onPress={() => setGender(g)}
+                        >
+                          <Text
+                            style={[
+                              styles.genderOptionText,
+                              gender === g && styles.genderOptionTextSelected,
+                            ]}
+                          >
+                            {g.toUpperCase()}
+                          </Text>
+                        </TouchableOpacity>
+                      ))}
+                    </View>
+                  </View>
+                </View>
+
                 <Text style={styles.label}>ADDRESS</Text>
                 <TextInput
                     style={[styles.input, styles.addressInput]}
@@ -280,6 +336,8 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   scrollContent: {
+    flexGrow: 1,
+    justifyContent: 'center',
     paddingTop: 16,
     paddingBottom: 32,
   },
@@ -426,5 +484,31 @@ const styles = StyleSheet.create({
     fontSize: 23,
     letterSpacing: 2.5,
     color: '#111111',
+  },
+  genderRow: {
+    flexDirection: 'row',
+    height: 52,
+    borderWidth: 1.5,
+    borderColor: '#D0D0D0',
+    borderRadius: 12,
+    overflow: 'hidden',
+    backgroundColor: '#F8F8F8',
+  },
+  genderOption: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: 'transparent',
+  },
+  genderOptionSelected: {
+    backgroundColor: '#111111',
+  },
+  genderOptionText: {
+    fontFamily: 'Oswald_700Bold',
+    fontSize: 12,
+    color: '#8A8A8A',
+  },
+  genderOptionTextSelected: {
+    color: 'white',
   },
 });

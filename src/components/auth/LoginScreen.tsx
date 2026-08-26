@@ -9,10 +9,12 @@ import { auth } from '../../FirebaseConfig'; // adjust path if needed
 import { Ionicons } from '@expo/vector-icons';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import type { RootStackParamList } from '../../types/navigation';
-import * as Google from 'expo-auth-session/providers/google';
-import * as WebBrowser from 'expo-web-browser';
+import { GoogleSignin } from '@react-native-google-signin/google-signin';
+import { getProfile, saveProfile } from '../../lib/userStorage';
 
-WebBrowser.maybeCompleteAuthSession();
+GoogleSignin.configure({
+  webClientId: process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID || '552125531713-ii8l769urh188qhhdqv14hsjklqk0bje.apps.googleusercontent.com',
+});
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Login'>;
 export default function LoginScreen({ navigation }: Props) {
@@ -22,26 +24,44 @@ export default function LoginScreen({ navigation }: Props) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [showPassword, setShowPassword] = useState(false);
-  const [request, response, promptAsync] = Google.useAuthRequest({
-    clientId: process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID || '552125531713-ii8l769urh188qhhdqv14hsjklqk0bje.apps.googleusercontent.com',
-    androidClientId: process.env.EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID,
-    iosClientId: process.env.EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID,
-    webClientId: process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID || '552125531713-ii8l769urh188qhhdqv14hsjklqk0bje.apps.googleusercontent.com',
-    redirectUri: 'https://auth.expo.io/@anonymous/barbellfitness',
-  });
 
-  React.useEffect(() => {
-    if (request) {
-      console.log('Google Auth Redirect URI:', request.redirectUri);
+  const handleGoogleSignIn = async () => {
+    if (loading) return;
+    try {
+      setError(null);
+      setLoading(true);
+      await GoogleSignin.hasPlayServices();
+      const response = await GoogleSignin.signIn();
+      const idToken = response.data?.idToken;
+      if (!idToken) { setError('Google did not return an ID token.'); return; }
+      const credential = GoogleAuthProvider.credential(idToken);
+      await signInWithCredential(auth, credential);
+      const email = auth.currentUser!.email || '';
+      const isOwner = email.toLowerCase().includes('admin') || email.toLowerCase().includes('owner');
+      
+      if (isOwner) {
+        const profile = await getProfile(auth.currentUser!.uid);
+        const updatedProfile = {
+          fullName: profile?.fullName || email.split('@')[0].toUpperCase(),
+          phoneNumber: profile?.phoneNumber || '-',
+          dateOfBirth: profile?.dateOfBirth || '-',
+          address: profile?.address || '-',
+          email,
+          role: 'owner' as const,
+        };
+        await saveProfile(auth.currentUser!.uid, updatedProfile);
+        navigation.reset({ index: 0, routes: [{ name: 'AdminMain' }] });
+      } else {
+        const profile = await getProfile(auth.currentUser!.uid);
+        navigation.reset({ index: 0, routes: [{ name: profile ? 'Main' : 'Detail' }] });
+      }
+    } catch (err: any) {
+      console.error('Google Sign-In error:', err);
+      setError('Google sign-in failed. Try again.');
+    } finally {
+      setLoading(false);
     }
-  }, [request]);
-
-  React.useEffect(() => {
-    if (response?.type !== 'success') return;
-    const idToken = response.params.id_token ?? response.authentication?.idToken;
-    if (!idToken) { setError('Google did not return an ID token. Check the OAuth client IDs.'); return; }
-    signInWithCredential(auth, GoogleAuthProvider.credential(idToken)).catch(() => setError('Google sign-in failed. Try again.'));
-  }, [response]);
+  };
 
   if (!fontsLoaded) return null;
 
@@ -54,9 +74,30 @@ export default function LoginScreen({ navigation }: Props) {
     setLoading(true);
     try {
       await signInWithEmailAndPassword(auth, email.trim(), password);
-      // The root auth gate selects Detail or Main after the persisted state updates.
+      
+      const userEmail = email.trim();
+      const isOwner = userEmail.toLowerCase().includes('admin') || userEmail.toLowerCase().includes('owner');
+      const uid = auth.currentUser!.uid;
+      
+      if (isOwner) {
+        const profile = await getProfile(uid);
+        const updatedProfile = {
+          fullName: profile?.fullName || userEmail.split('@')[0].toUpperCase(),
+          phoneNumber: profile?.phoneNumber || '-',
+          dateOfBirth: profile?.dateOfBirth || '-',
+          address: profile?.address || '-',
+          email: userEmail,
+          role: 'owner' as const,
+        };
+        await saveProfile(uid, updatedProfile);
+        navigation.reset({ index: 0, routes: [{ name: 'AdminMain' }] });
+      } else {
+        const profile = await getProfile(uid);
+        navigation.reset({ index: 0, routes: [{ name: profile ? 'Main' : 'Detail' }] });
+      }
     } catch (err: any) {
-      const code = err.code ?? err.message;
+      const code = err.code ?? err.message ?? '';
+      console.error('Login error:', err);
       if (code.includes('auth/user-not-found')) setError('No account found for that email.');
       else if (code.includes('auth/wrong-password')) setError('Incorrect password.');
       else if (code.includes('auth/invalid-email')) setError('Invalid email address.');
@@ -116,7 +157,7 @@ export default function LoginScreen({ navigation }: Props) {
         <Text style={styles.orText}>or login with</Text>
 
         <View style={styles.socialContainer}>
-          <TouchableOpacity style={styles.iconBox} onPress={() => promptAsync()} disabled={!request}>
+          <TouchableOpacity style={styles.iconBox} onPress={handleGoogleSignIn}>
             <Image source={require('./assets/google.png')} style={styles.icon} />
           </TouchableOpacity>
           <TouchableOpacity style={styles.iconBox}>

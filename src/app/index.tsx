@@ -14,9 +14,10 @@ import StandardScreen from '../components/main/StandardScreen';
 import WellnessScreen from '../components/main/WellnessScreen';
 import PlatinumScreen from '../components/main/PlatinumScreen';
 import MainScreen from '../components/main/MainScreen';
+import AdminMainScreen from '../components/main/AdminMainScreen';
 import { onAuthStateChanged } from 'firebase/auth';
 import { auth } from '../FirebaseConfig';
-import { getProfile } from '../lib/userStorage';
+import { getProfile, saveProfile } from '../lib/userStorage';
 import type { RootStackParamList } from '../types/navigation';
 
 
@@ -38,8 +39,25 @@ export default function App() {
         return;
       }
       try {
-        const profile = await getProfile(user.uid);
-        setInitialRoute(profile ? 'Main' : 'Detail');
+        const email = user.email || '';
+        const isOwner = email.toLowerCase().includes('admin') || email.toLowerCase().includes('owner');
+        
+        if (isOwner) {
+          const profile = await getProfile(user.uid);
+          const updatedProfile = {
+            fullName: profile?.fullName || email.split('@')[0].toUpperCase(),
+            phoneNumber: profile?.phoneNumber || '-',
+            dateOfBirth: profile?.dateOfBirth || '-',
+            address: profile?.address || '-',
+            email,
+            role: 'owner' as const,
+          };
+          await saveProfile(user.uid, updatedProfile);
+          setInitialRoute('AdminMain');
+        } else {
+          const profile = await getProfile(user.uid);
+          setInitialRoute(profile ? 'Main' : 'Detail');
+        }
       } catch (err) {
         console.error('Failed to verify profile', err);
         setInitialRoute('Detail');
@@ -72,6 +90,7 @@ export default function App() {
         <Stack.Screen name="WellnessPlan" component={WellnessScreen} options={{ headerShown: false }} />
         <Stack.Screen name="PlatinumPlan" component={PlatinumScreen} options={{ headerShown: false }} />
         <Stack.Screen name="Main" component={MainScreen} options={{ headerShown: false }} />
+        <Stack.Screen name="AdminMain" component={AdminMainScreen} options={{ headerShown: false }} />
       </Stack.Navigator>
     </NavigationContainer>
   );

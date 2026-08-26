@@ -6,6 +6,7 @@ import { Oswald_400Regular, Oswald_600SemiBold, Oswald_700Bold } from '@expo-goo
 import { useIsFocused } from '@react-navigation/native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { signOut } from 'firebase/auth';
+import { GoogleSignin } from '@react-native-google-signin/google-signin';
 import { auth } from '../../FirebaseConfig';
 import type { BottomTabScreenProps } from '@react-navigation/bottom-tabs';
 import type { MainTabParamList } from '../../types/navigation';
@@ -23,7 +24,7 @@ export default function ProfileScreen({ navigation }: Props) {
   const isFocused = useIsFocused();
 
   const [profile, setProfile] = useState({
-    fullName: '-', phoneNumber: '-', dateOfBirth: '-', address: '-',
+    fullName: '-', phoneNumber: '-', dateOfBirth: '-', address: '-', age: '-', gender: '-',
   });
   const [membership, setMembership] = useState<Membership | null>(null);
   const [profileImage, setProfileImage] = useState<string | null>(null);
@@ -44,6 +45,8 @@ export default function ProfileScreen({ navigation }: Props) {
             phoneNumber: stored.phoneNumber ?? '-',
             dateOfBirth: stored.dateOfBirth ?? '-',
             address: stored.address ?? '-',
+            age: stored.age ?? '-',
+            gender: stored.gender ?? '-',
           });
         }
 
@@ -92,6 +95,7 @@ export default function ProfileScreen({ navigation }: Props) {
 
   const handleLogout = async () => {
     try {
+      await GoogleSignin.signOut();
       await signOut(auth);
       Alert.alert('Logged out', 'You have been successfully logged out.');
       navigation.getParent()?.reset({ index: 0, routes: [{ name: 'Login' }] });
@@ -183,6 +187,22 @@ export default function ProfileScreen({ navigation }: Props) {
               <View style={styles.detailTextContainer}>
                 <Text style={styles.detailLabel}>DATE OF BIRTH</Text>
                 <Text style={styles.detailValue}>{profile.dateOfBirth}</Text>
+              </View>
+            </View>
+
+            <View style={styles.detailRow}>
+              <Ionicons name="accessibility-outline" size={20} color="black" style={styles.detailIcon} />
+              <View style={styles.detailTextContainer}>
+                <Text style={styles.detailLabel}>AGE</Text>
+                <Text style={styles.detailValue}>{profile.age}</Text>
+              </View>
+            </View>
+
+            <View style={styles.detailRow}>
+              <Ionicons name="male-female-outline" size={20} color="black" style={styles.detailIcon} />
+              <View style={styles.detailTextContainer}>
+                <Text style={styles.detailLabel}>GENDER</Text>
+                <Text style={styles.detailValue}>{profile.gender}</Text>
               </View>
             </View>
 

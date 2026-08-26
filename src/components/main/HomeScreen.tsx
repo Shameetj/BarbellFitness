@@ -292,7 +292,7 @@ export default function HomeScreen(_props: Props) {
                     <Text style={styles.widgetText}> 405 lbs</Text>
                   </View>
                   <View style={[styles.widgetRow, { alignItems: 'center' }]}>
-                    <Text style={styles.widgetTextBold}>2. You</Text>
+                    <Text style={styles.widgetTextBold}>2. Your</Text>
                     {isEditingPrs ? (
                       <TextInput style={styles.prInput} keyboardType="numeric" value={prs.squat} onChangeText={(val) => setPrs({ ...prs, squat: val })} />
                     ) : (

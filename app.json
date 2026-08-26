@@ -31,7 +31,8 @@
           "photosPermission": "Allow BarbellFitness to access photos you choose for your profile."
         }
       ],
-      "expo-web-browser"
+      "expo-web-browser",
+      "@react-native-google-signin/google-signin"
     ],
     "extra": {
       "router": {},

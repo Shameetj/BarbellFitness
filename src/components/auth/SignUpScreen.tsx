@@ -6,13 +6,16 @@ import { useFonts, BebasNeue_400Regular } from '@expo-google-fonts/bebas-neue';
 import { Oswald_400Regular, Oswald_600SemiBold, Oswald_700Bold } from '@expo-google-fonts/oswald';
 import { createUserWithEmailAndPassword, updateProfile, signInWithCredential, GoogleAuthProvider } from 'firebase/auth';
 import { auth } from '../../FirebaseConfig';
-import * as Google from 'expo-auth-session/providers/google';
-import * as WebBrowser from 'expo-web-browser';
+import { GoogleSignin } from '@react-native-google-signin/google-signin';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import type { RootStackParamList } from '../../types/navigation';
 
-WebBrowser.maybeCompleteAuthSession();
+import { getProfile, saveProfile } from '../../lib/userStorage';
+
+GoogleSignin.configure({
+  webClientId: process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID || '552125531713-ii8l769urh188qhhdqv14hsjklqk0bje.apps.googleusercontent.com',
+});
 
 type Props = NativeStackScreenProps<RootStackParamList, 'SignUp'>;
 export default function SignUpScreen({ navigation }: Props) {
@@ -24,37 +27,43 @@ export default function SignUpScreen({ navigation }: Props) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const [request, response, promptAsync] = Google.useAuthRequest({
-    clientId: process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID || '552125531713-ii8l769urh188qhhdqv14hsjklqk0bje.apps.googleusercontent.com',
-    androidClientId: process.env.EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID,
-    iosClientId: process.env.EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID,
-    webClientId: process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID || '552125531713-ii8l769urh188qhhdqv14hsjklqk0bje.apps.googleusercontent.com',
-    redirectUri: 'https://auth.expo.io/@anonymous/barbellfitness',
-  });
-
-  useEffect(() => {
-    if (request) {
-      console.log('Google Auth Redirect URI:', request.redirectUri);
+  const handleGoogleSignIn = async () => {
+    if (loading) return;
+    try {
+      setError(null);
+      setLoading(true);
+      await GoogleSignin.hasPlayServices();
+      const response = await GoogleSignin.signIn();
+      const idToken = response.data?.idToken;
+      if (!idToken) { setError('Google did not return an ID token.'); return; }
+      const credential = GoogleAuthProvider.credential(idToken);
+      await signInWithCredential(auth, credential);
+      const userEmail = auth.currentUser!.email || '';
+      const isOwner = userEmail.toLowerCase().includes('admin') || userEmail.toLowerCase().includes('owner');
+      
+      if (isOwner) {
+        const profile = await getProfile(auth.currentUser!.uid);
+        const updatedProfile = {
+          fullName: profile?.fullName || userEmail.split('@')[0].toUpperCase(),
+          phoneNumber: profile?.phoneNumber || '-',
+          dateOfBirth: profile?.dateOfBirth || '-',
+          address: profile?.address || '-',
+          email: userEmail,
+          role: 'owner' as const,
+        };
+        await saveProfile(auth.currentUser!.uid, updatedProfile);
+        navigation.replace('AdminMain');
+      } else {
+        const profile = await getProfile(auth.currentUser!.uid);
+        navigation.replace(profile ? 'Main' : 'Detail');
+      }
+    } catch (err: any) {
+      console.error('Google Sign-In error:', err);
+      setError('Google sign-in failed. Try again.');
+    } finally {
+      setLoading(false);
     }
-  }, [request]);
-
-  // Google Sign-In response handler
-  useEffect(() => {
-    if (response?.type === 'success') {
-      const id_token = response.params.id_token ?? response.authentication?.idToken;
-      if (!id_token) { setError('Google did not return an ID token. Check the OAuth client IDs.'); return; }
-      const credential = GoogleAuthProvider.credential(id_token);
-      signInWithCredential(auth, credential)
-        .then(async () => {
-          const profile = await AsyncStorage.getItem('user_profile');
-          navigation.replace(profile ? 'Main' : 'Detail');
-        })
-        .catch((err) => {
-          setError('Google sign-in failed. Try again.');
-          console.error(err);
-        });
-    }
-  }, [response]);
+  };
 
   if (!fontsLoaded) return null;
 
@@ -71,7 +80,23 @@ export default function SignUpScreen({ navigation }: Props) {
       if (userCredential.user && username.trim()) {
         await updateProfile(userCredential.user, { displayName: username.trim() });
       }
-      navigation.replace('Detail');
+      
+      const userEmail = email.trim();
+      const isOwner = userEmail.toLowerCase().includes('admin') || userEmail.toLowerCase().includes('owner');
+      if (isOwner && userCredential.user) {
+        const updatedProfile = {
+          fullName: username.trim(),
+          phoneNumber: '-',
+          dateOfBirth: '-',
+          address: '-',
+          email: userEmail,
+          role: 'owner' as const,
+        };
+        await saveProfile(userCredential.user.uid, updatedProfile);
+        navigation.replace('AdminMain');
+      } else {
+        navigation.replace('Detail');
+      }
     } catch (err: any) {
       const code = err.code ?? err.message ?? '';
       if (code.includes('auth/email-already-in-use')) setError('This email is already in use.');
@@ -137,7 +162,7 @@ export default function SignUpScreen({ navigation }: Props) {
         <Text style={styles.orText}>or login with</Text>
 
         <View style={styles.socialContainer}>
-          <TouchableOpacity style={styles.iconBox} onPress={() => promptAsync()} disabled={!request}>
+          <TouchableOpacity style={styles.iconBox} onPress={handleGoogleSignIn}>
             <Image source={require('./assets/google.png')} style={styles.icon} />
           </TouchableOpacity>
           <TouchableOpacity style={styles.iconBox}>

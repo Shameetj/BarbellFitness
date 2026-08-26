@@ -5,13 +5,14 @@ import { Oswald_400Regular, Oswald_600SemiBold, Oswald_700Bold } from '@expo-goo
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import ProfileScreen from './ProfileScreen';
-import HomeScreen from './HomeScreen';
 import AdminMembersScreen from './AdminMembersScreen';
-import type { MainTabParamList } from '../../types/navigation';
+import AdminAnnouncementsScreen from './AdminAnnouncementsScreen';
+import AdminChallengesScreen from './AdminChallengesScreen';
+import AdminProfileScreen from './AdminProfileScreen';
+import type { AdminTabParamList } from '../../types/navigation';
 
-export default function MainScreen() {
-  const Tab = createBottomTabNavigator<MainTabParamList>();
+export default function AdminMainScreen() {
+  const Tab = createBottomTabNavigator<AdminTabParamList>();
   const insets = useSafeAreaInsets();
 
   const [fontsLoaded] = useFonts({
@@ -28,7 +29,7 @@ export default function MainScreen() {
   return (
     <View style={styles.container}>
       <Tab.Navigator
-        initialRouteName="Home"
+        initialRouteName="Registry"
         screenOptions={({ route }) => ({
           headerShown: false,
           tabBarActiveTintColor: 'black',
@@ -37,13 +38,22 @@ export default function MainScreen() {
           tabBarItemStyle: styles.tabBarItem,
           tabBarLabelStyle: styles.tabBarLabel,
           tabBarIcon: ({ color }) => {
-            const iconName = route.name === 'Home' ? 'barbell-outline' : 'person-outline';
-            return <Ionicons name={iconName} size={28} color={color} />;
+            let iconName: any = 'people-outline';
+            if (route.name === 'Announcements') {
+              iconName = 'megaphone-outline';
+            } else if (route.name === 'Challenges') {
+              iconName = 'trophy-outline';
+            } else if (route.name === 'Profile') {
+              iconName = 'shield-checkmark-outline';
+            }
+            return <Ionicons name={iconName} size={26} color={color} />;
           },
         })}
       >
-        <Tab.Screen name="Home" component={HomeScreen} />
-        <Tab.Screen name="Profile" component={ProfileScreen} />
+        <Tab.Screen name="Registry" component={AdminMembersScreen} options={{ title: 'REGISTRY' }} />
+        <Tab.Screen name="Announcements" component={AdminAnnouncementsScreen} options={{ title: 'ANNOUNCEMENTS' }} />
+        <Tab.Screen name="Challenges" component={AdminChallengesScreen} options={{ title: 'CHALLENGES' }} />
+        <Tab.Screen name="Profile" component={AdminProfileScreen} options={{ title: 'PROFILE' }} />
       </Tab.Navigator>
     </View>
   );
@@ -69,7 +79,7 @@ const styles = StyleSheet.create({
   },
   tabBarLabel: {
     fontFamily: 'Oswald_700Bold',
-    fontSize: 12,
-    letterSpacing: 1,
+    fontSize: 10,
+    letterSpacing: 0.5,
   },
 });
