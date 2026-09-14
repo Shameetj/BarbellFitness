@@ -50,21 +50,20 @@ const membershipKey = (uid: string) => keyFor(uid, 'membership'); const prsKey =
 export const localDateString = (date: Date) => `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
 export const readJson = async <T>(key: string): Promise<T | null> => { const raw = await AsyncStorage.getItem(key); if (!raw) return null; try { return JSON.parse(raw) as T; } catch { await AsyncStorage.removeItem(key); return null; } };
 
+// Fetch profile directly from Firestore /users/{uid} as authoritative source
 export const getProfile = async (uid: string): Promise<UserProfile | null> => {
-  const local = await readJson<UserProfile>(profileKey(uid));
-  // Background fetch to keep local cache in sync without blocking startup
-  getDoc(doc(db, 'users', uid))
-    .then(async (userDoc) => {
-      if (userDoc.exists()) {
-        const remoteData = userDoc.data() as UserProfile;
-        const merged = { ...local, ...remoteData };
-        await AsyncStorage.setItem(profileKey(uid), JSON.stringify(merged));
-      }
-    })
-    .catch((error) => {
-      console.warn('Firestore profile background sync failed:', error);
-    });
-  return local;
+  try {
+    const userDoc = await getDoc(doc(db, 'users', uid));
+    if (userDoc.exists()) {
+      const remoteData = userDoc.data() as UserProfile;
+      await AsyncStorage.setItem(profileKey(uid), JSON.stringify(remoteData));
+      return remoteData;
+    }
+    return null;
+  } catch (error) {
+    console.error(`Failed to fetch profile from Firestore for user ${uid}:`, error);
+    return null;
+  }
 };
 
 // Fetch profile directly from Firestore to ensure fresh/authoritative role verification
@@ -78,7 +77,7 @@ export const fetchUserProfile = async (uid: string): Promise<UserProfile | null>
     }
     return null;
   } catch (error) {
-    console.warn('Direct Firestore profile fetch failed:', error);
+    console.error(`Direct Firestore profile fetch failed for user ${uid}:`, error);
     return null;
   }
 };
