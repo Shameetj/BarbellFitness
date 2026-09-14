@@ -63,6 +63,15 @@ service cloud.firestore {
         // Members can log, update, or delete their own PRs; admins/owners can manage any member's PRs
         allow create, update, delete: if isOwner(userId) || isAdminOrOwner();
       }
+
+      // Rules for attendance subcollection
+      match /attendance/{attendanceId} {
+        // Authenticated member can read ONLY their own attendance; admins/owners can read all
+        allow read: if isOwner(userId) || isAdminOrOwner();
+
+        // ONLY admin/owner can create, update, or delete attendance records
+        allow create, update, delete: if isAdminOrOwner();
+      }
     }
 
     // Rules for gym announcements
