@@ -19,7 +19,15 @@ import DateTimePicker from '@react-native-community/datetimepicker';
 import * as ImagePicker from 'expo-image-picker';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { auth } from '../../FirebaseConfig';
-import { localDateString, saveProfile, saveProfileImage, saveMembership, getProfile, getMembership, type UserProfile } from '../../lib/userStorage';
+import {
+  localDateString,
+  saveProfile,
+  saveProfileImage,
+  getProfile,
+  getMembership,
+  createMembershipRequest,
+  type UserProfile,
+} from '../../lib/userStorage';
 import type { RootStackParamList } from '../../types/navigation';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Detail'>;
@@ -43,6 +51,10 @@ export default function DetailScreen({ navigation }: Props) {
   const [profileImage, setProfileImage] = useState<string | null>(null);
   const [age, setAge] = useState('');
   const [gender, setGender] = useState('Male');
+
+  React.useEffect(() => {
+    console.log(`[NAV] DetailScreen mounted for user: ${auth.currentUser?.uid || 'unauthenticated'}`);
+  }, []);
 
   if (!fontsLoaded) return null;
 
@@ -144,27 +156,31 @@ export default function DetailScreen({ navigation }: Props) {
 
       await saveProfile(uid, profile);
 
-      // Create a default membership active for 1 year for old gym members
-      const startDate = new Date();
-      const endDate = new Date();
-      endDate.setFullYear(endDate.getFullYear() + 1);
+      // Create a pending verification request for old gym member instead of direct unauthorized membership write
+      try {
+        await createMembershipRequest(uid, 'Standard', 'renewal');
+      } catch {
+        // If a request already exists, that's fine; proceed with navigation
+      }
 
-      const membership = {
-        plan: 'Standard' as const,
-        startDate: localDateString(startDate),
-        endDate: localDateString(endDate),
-        createdAt: startDate.toISOString(),
-      };
-
-      await saveMembership(uid, membership);
-
-      navigation.reset({
-        index: 0,
-        routes: [{ name: 'Main' }],
-      });
+      Alert.alert(
+        'Profile Saved',
+        'Your profile has been saved. Your previous membership verification request has been submitted for gym staff approval.',
+        [
+          {
+            text: 'OK',
+            onPress: () => {
+              navigation.reset({
+                index: 0,
+                routes: [{ name: 'Main' }],
+              });
+            },
+          },
+        ]
+      );
     } catch (error) {
       console.warn('Failed saving profile/membership', error);
-      Alert.alert('Error', 'Could not retrieve old membership details. Please try again.');
+      Alert.alert('Error', 'Could not save profile details. Please try again.');
     }
   };
 

@@ -1,14 +1,21 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { StyleSheet, Text, TouchableOpacity, View, Alert, ActivityIndicator } from 'react-native';
 import { useFonts, BebasNeue_400Regular } from '@expo-google-fonts/bebas-neue';
 import { Oswald_400Regular, Oswald_600SemiBold, Oswald_700Bold } from '@expo-google-fonts/oswald';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import type { RootStackParamList } from '../../types/navigation';
-import { purchaseMembership } from '../../lib/membership';
+import { auth } from '../../FirebaseConfig';
+import {
+  createMembershipRequest,
+  getPendingMembershipRequest,
+  type MembershipRequest,
+} from '../../lib/userStorage';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'BasicPlan'>;
 export default function BasicScreen({ navigation }: Props) {
   const [saving, setSaving] = useState(false);
+  const [pendingRequest, setPendingRequest] = useState<MembershipRequest | null>(null);
+
   const [fontsLoaded] = useFonts({
     BebasNeue_400Regular,
     Oswald_400Regular,
@@ -16,26 +23,60 @@ export default function BasicScreen({ navigation }: Props) {
     Oswald_700Bold,
   });
 
+  const checkPending = useCallback(async () => {
+    const uid = auth.currentUser?.uid;
+    if (!uid) return;
+    const req = await getPendingMembershipRequest(uid);
+    setPendingRequest(req);
+  }, []);
+
+  useEffect(() => {
+    checkPending();
+  }, [checkPending]);
+
   if (!fontsLoaded) return null;
 
-  const handleBuyNow = async () => {
+  const handleRequestPlan = async () => {
     if (saving) return;
+    const uid = auth.currentUser?.uid;
+    if (!uid) {
+      Alert.alert('Session Expired', 'Please log in to request a membership plan.');
+      return;
+    }
+
     setSaving(true);
     try {
-      const membership = await purchaseMembership('Basic');
+      const existing = await getPendingMembershipRequest(uid);
+      if (existing) {
+        setPendingRequest(existing);
+        Alert.alert(
+          'Request Pending',
+          `You already have a pending request for the ${existing.plan} Plan. Please complete payment at the gym reception to activate your membership.`
+        );
+        return;
+      }
 
-      Alert.alert('Purchased', `Basic plan active until ${membership.endDate}`, [
-        {
-          text: 'OK',
-          onPress: () => {
-            navigation.reset({ index: 0, routes: [{ name: 'Main', params: { screen: 'Home' } }] });
+      const created = await createMembershipRequest(uid, 'Basic');
+      setPendingRequest(created);
+
+      Alert.alert(
+        'Request Submitted',
+        'Your membership request for the Basic Plan has been submitted. Please complete payment at the gym reception. Your membership will be activated after staff approval.',
+        [
+          {
+            text: 'OK',
+            onPress: () => {
+              navigation.reset({ index: 0, routes: [{ name: 'Main', params: { screen: 'Home' } }] });
+            },
           },
-        },
-      ]);
-    } catch (err) {
-      Alert.alert('Error', 'Failed to complete purchase. Please try again.');
-      console.error(err);
-    } finally { setSaving(false); }
+        ]
+      );
+    } catch (err: any) {
+      console.error('Failed to submit membership request:', err);
+      Alert.alert('Request Failed', err.message || 'Failed to submit membership request. Please try again.');
+    } finally {
+      setSaving(false);
+    }
   };
 
   return (
@@ -52,8 +93,26 @@ export default function BasicScreen({ navigation }: Props) {
         <Text style={styles.text}>• Member app for workout tracking</Text>
         <Text style={styles.text}>• Discounts on personal training and upgrades</Text>
 
-        <TouchableOpacity style={styles.blackBox} onPress={handleBuyNow} disabled={saving}>
-          {saving ? <ActivityIndicator color="white" /> : <Text style={styles.buttonText}>BUY NOW!</Text>}
+        {pendingRequest && (
+          <View style={styles.pendingNotice}>
+            <Text style={styles.pendingNoticeText}>
+              ⏳ PENDING REQUEST: {pendingRequest.plan.toUpperCase()} PLAN
+            </Text>
+          </View>
+        )}
+
+        <TouchableOpacity
+          style={[styles.blackBox, pendingRequest && styles.disabledButton]}
+          onPress={handleRequestPlan}
+          disabled={saving || !!pendingRequest}
+        >
+          {saving ? (
+            <ActivityIndicator color="white" />
+          ) : (
+            <Text style={styles.buttonText}>
+              {pendingRequest ? 'REQUEST PENDING' : 'REQUEST PLAN'}
+            </Text>
+          )}
         </TouchableOpacity>
       </View>
     </View>
@@ -119,5 +178,24 @@ const styles = StyleSheet.create({
     marginTop: 20,
     marginBottom: 10,
     lineHeight: 36,
+  },
+  pendingNotice: {
+    backgroundColor: '#FFF3CD',
+    borderColor: '#FFEEBA',
+    borderWidth: 1,
+    borderRadius: 8,
+    padding: 10,
+    marginHorizontal: 16,
+    marginTop: 15,
+    alignItems: 'center',
+  },
+  pendingNoticeText: {
+    fontFamily: 'Oswald_600SemiBold',
+    fontSize: 13,
+    color: '#856404',
+    letterSpacing: 1,
+  },
+  disabledButton: {
+    backgroundColor: '#555555',
   },
 });

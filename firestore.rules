@@ -100,7 +100,71 @@ service cloud.firestore {
       // Only admins/owners can create, update, or delete challenges
       allow create, update, delete: if isAdminOrOwner();
     }
+
+    // Helper to validate allowed membership plan names
+    function isValidPlan(plan) {
+      return plan in ['Basic', 'Standard', 'Wellness', 'Platinum'];
+    }
+
+    // Helper to validate allowed request types
+    function isValidRequestType(reqType) {
+      return reqType in ['new', 'renewal'];
+    }
+
+    // Validate member creating a membership request
+    function isValidMemberRequestCreate() {
+      return isAuthenticated() &&
+        request.resource.data.userId == request.auth.uid &&
+        request.resource.data.status == 'pending' &&
+        isValidPlan(request.resource.data.plan) &&
+        (!('requestType' in request.resource.data) || isValidRequestType(request.resource.data.requestType)) &&
+        !('reviewedBy' in request.resource.data) &&
+        !('reviewedAt' in request.resource.data);
+    }
+
+    // Validate member cancelling their own pending membership request
+    function isValidMemberRequestCancel() {
+      return isAuthenticated() &&
+        resource.data.userId == request.auth.uid &&
+        request.resource.data.userId == resource.data.userId &&
+        request.resource.data.plan == resource.data.plan &&
+        request.resource.data.requestedAt == resource.data.requestedAt &&
+        ((!('requestType' in resource.data) && !('requestType' in request.resource.data)) ||
+         ('requestType' in resource.data && 'requestType' in request.resource.data && request.resource.data.requestType == resource.data.requestType)) &&
+        resource.data.status == 'pending' &&
+        request.resource.data.status == 'cancelled' &&
+        !('reviewedBy' in request.resource.data) &&
+        !('reviewedAt' in request.resource.data);
+    }
+
+    // Validate admin/owner updating a membership request (approval or rejection)
+    function isValidAdminRequestUpdate() {
+      return isAdminOrOwner() &&
+        resource.data.status == 'pending' &&
+        (request.resource.data.status == 'approved' || request.resource.data.status == 'rejected') &&
+        request.resource.data.userId == resource.data.userId &&
+        request.resource.data.plan == resource.data.plan &&
+        request.resource.data.requestedAt == resource.data.requestedAt &&
+        ((!('requestType' in resource.data) && !('requestType' in request.resource.data)) ||
+         ('requestType' in resource.data && 'requestType' in request.resource.data && request.resource.data.requestType == resource.data.requestType)) &&
+        request.resource.data.reviewedBy == request.auth.uid &&
+        'reviewedAt' in request.resource.data &&
+        request.resource.data.reviewedAt is string;
+    }
+
+    // Rules for membership requests
+    match /membershipRequests/{requestId} {
+      // Authenticated members can read their own requests; admins/owners can read all
+      allow read: if (isAuthenticated() && resource.data.userId == request.auth.uid) || isAdminOrOwner();
+
+      // Members can create a valid pending request for themselves only; admins/owners can create
+      allow create: if isValidMemberRequestCreate() || isAdminOrOwner();
+
+      // Members can ONLY cancel their own pending request (preserving all other fields); admins/owners can only approve or reject pending requests with reviewedBy == request.auth.uid
+      allow update: if isValidMemberRequestCancel() || isValidAdminRequestUpdate();
+
+      // Only admins/owners can delete requests
+      allow delete: if isAdminOrOwner();
+    }
   }
 }
-
-

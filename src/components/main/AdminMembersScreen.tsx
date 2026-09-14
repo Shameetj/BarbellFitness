@@ -34,13 +34,17 @@ import {
   updateAttendance,
   deleteAttendance,
   deleteField,
+  getAllMembershipRequests,
+  approveMembershipRequest,
+  rejectMembershipRequest,
   type AdminMember,
   type Membership,
   type UserProfile,
   type AttendanceRecord,
+  type MembershipRequest,
 } from '../../lib/userStorage';
 
-type FilterType = 'All' | 'Active' | 'Expiring' | 'Expired';
+type FilterType = 'All' | 'Active' | 'Expiring' | 'Expired' | 'Requests';
 
 export default function AdminMembersScreen() {
   const insets = useSafeAreaInsets();
@@ -55,6 +59,9 @@ export default function AdminMembersScreen() {
 
   const [members, setMembers] = useState<AdminMember[]>([]);
   const [filteredMembers, setFilteredMembers] = useState<AdminMember[]>([]);
+  const [requests, setRequests] = useState<MembershipRequest[]>([]);
+  const [loadingRequests, setLoadingRequests] = useState(false);
+  const [processingRequestId, setProcessingRequestId] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [activeFilter, setActiveFilter] = useState<FilterType>('All');
   const [refreshing, setRefreshing] = useState(false);
@@ -337,6 +344,23 @@ export default function AdminMembersScreen() {
     }
   };
 
+  const fetchRequests = async () => {
+    try {
+      setLoadingRequests(true);
+      const allReqs = await getAllMembershipRequests();
+      const sorted = allReqs.sort((a, b) => {
+        if (a.status === 'pending' && b.status !== 'pending') return -1;
+        if (a.status !== 'pending' && b.status === 'pending') return 1;
+        return (b.requestedAt || '').localeCompare(a.requestedAt || '');
+      });
+      setRequests(sorted);
+    } catch (error) {
+      console.error('Failed to load membership requests', error);
+    } finally {
+      setLoadingRequests(false);
+    }
+  };
+
   const fetchMembers = async () => {
     try {
       setLoading(true);
@@ -349,6 +373,7 @@ export default function AdminMembersScreen() {
       });
       setMembers(sorted);
       applyFilters(sorted, searchQuery, activeFilter);
+      await fetchRequests();
     } catch (error) {
       console.error('Failed to load members', error);
       Alert.alert('Error', 'Failed to fetch gym members list.');
@@ -362,6 +387,7 @@ export default function AdminMembersScreen() {
     if (isFocused) {
       fetchMembers();
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isFocused]);
 
   const onRefresh = () => {
@@ -659,7 +685,162 @@ export default function AdminMembersScreen() {
     setFormStartDate(new Date());
   };
 
+  const handleApproveRequest = async (req: MembershipRequest) => {
+    const adminUid = auth.currentUser?.uid;
+    if (!adminUid) {
+      Alert.alert('Error', 'Authenticated admin session is required.');
+      return;
+    }
+
+    const member = members.find(m => m.uid === req.userId);
+    const memberName = member?.fullName || `User (${req.userId.substring(0, 8)})`;
+
+    Alert.alert(
+      'Confirm Activation',
+      `Activate ${req.plan} Plan for ${memberName}?`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Approve & Activate',
+          onPress: async () => {
+            setProcessingRequestId(req.id);
+            try {
+              await approveMembershipRequest(req.id, adminUid);
+              Alert.alert('Success', `Membership activated for ${memberName}.`);
+              await fetchMembers();
+            } catch (err: any) {
+              console.error('Failed to approve request:', err);
+              Alert.alert('Error', err?.message || 'Failed to approve membership request.');
+            } finally {
+              setProcessingRequestId(null);
+            }
+          },
+        },
+      ]
+    );
+  };
+
+  const handleRejectRequest = async (req: MembershipRequest) => {
+    const adminUid = auth.currentUser?.uid;
+    if (!adminUid) {
+      Alert.alert('Error', 'Authenticated admin session is required.');
+      return;
+    }
+
+    const member = members.find(m => m.uid === req.userId);
+    const memberName = member?.fullName || `User (${req.userId.substring(0, 8)})`;
+
+    Alert.alert(
+      'Reject Request',
+      `Are you sure you want to reject this membership request for ${memberName}?`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Reject',
+          style: 'destructive',
+          onPress: async () => {
+            setProcessingRequestId(req.id);
+            try {
+              await rejectMembershipRequest(req.id, adminUid);
+              Alert.alert('Rejected', 'The membership request was rejected.');
+              await fetchRequests();
+            } catch (err: any) {
+              console.error('Failed to reject request:', err);
+              Alert.alert('Error', err?.message || 'Failed to reject membership request.');
+            } finally {
+              setProcessingRequestId(null);
+            }
+          },
+        },
+      ]
+    );
+  };
+
   if (!fontsLoaded) return null;
+
+  const renderRequestCard = ({ item }: { item: MembershipRequest }) => {
+    const member = members.find(m => m.uid === item.userId);
+    const memberName = member?.fullName || `UID: ${item.userId.substring(0, 10)}...`;
+    const memberPhone = member?.phoneNumber || 'No phone recorded';
+    const isPending = item.status === 'pending';
+    const isProcessing = processingRequestId === item.id;
+
+    const statusBadgeColor =
+      item.status === 'approved'
+        ? '#4CAF50'
+        : item.status === 'rejected'
+        ? '#E53935'
+        : item.status === 'cancelled'
+        ? '#777777'
+        : '#FF9800';
+
+    return (
+      <View style={styles.requestCard}>
+        <View style={styles.requestHeader}>
+          <View style={{ flex: 1, marginRight: 8 }}>
+            <Text style={styles.requestMemberName}>{memberName}</Text>
+            <Text style={styles.requestMemberPhone}>{memberPhone}</Text>
+          </View>
+          <View style={[styles.statusPill, { backgroundColor: statusBadgeColor }]}>
+            <Text style={styles.statusText}>{item.status.toUpperCase()}</Text>
+          </View>
+        </View>
+
+        <View style={styles.requestDivider} />
+
+        <View style={styles.requestBody}>
+          <View style={styles.requestMetaRow}>
+            <Text style={styles.requestMetaLabel}>REQUESTED PLAN</Text>
+            <Text style={styles.requestMetaValue}>{item.plan.toUpperCase()} PLAN</Text>
+          </View>
+          <View style={styles.requestMetaRow}>
+            <Text style={styles.requestMetaLabel}>REQUEST TYPE</Text>
+            <Text style={styles.requestMetaValue}>{(item.requestType || 'new').toUpperCase()}</Text>
+          </View>
+          <View style={styles.requestMetaRow}>
+            <Text style={styles.requestMetaLabel}>DATE SUBMITTED</Text>
+            <Text style={styles.requestMetaValue}>
+              {item.requestedAt ? new Date(item.requestedAt).toLocaleDateString() : 'N/A'}
+            </Text>
+          </View>
+          {item.reviewedAt && (
+            <View style={styles.requestMetaRow}>
+              <Text style={styles.requestMetaLabel}>REVIEWED ON</Text>
+              <Text style={styles.requestMetaValue}>
+                {new Date(item.reviewedAt).toLocaleDateString()}
+              </Text>
+            </View>
+          )}
+        </View>
+
+        {isPending && (
+          <View style={styles.requestActionsRow}>
+            <TouchableOpacity
+              style={[styles.requestRejectBtn, isProcessing && styles.disabledButton]}
+              onPress={() => handleRejectRequest(item)}
+              disabled={isProcessing}
+              activeOpacity={0.8}
+            >
+              <Text style={styles.requestRejectBtnText}>REJECT</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={[styles.requestApproveBtn, isProcessing && styles.disabledButton]}
+              onPress={() => handleApproveRequest(item)}
+              disabled={isProcessing}
+              activeOpacity={0.8}
+            >
+              {isProcessing ? (
+                <ActivityIndicator color="white" size="small" />
+              ) : (
+                <Text style={styles.requestApproveBtnText}>APPROVE & ACTIVATE</Text>
+              )}
+            </TouchableOpacity>
+          </View>
+        )}
+      </View>
+    );
+  };
 
   const renderMemberCard = ({ item }: { item: AdminMember }) => {
     const status = getMemberStatus(item);
@@ -721,6 +902,25 @@ export default function AdminMembersScreen() {
     );
   };
 
+  const pendingRequestsCount = requests.filter(r => r.status === 'pending').length;
+
+  const getFilteredRequests = () => {
+    let list = [...requests];
+    if (searchQuery.trim()) {
+      const q = searchQuery.toLowerCase();
+      list = list.filter(r => {
+        const member = members.find(m => m.uid === r.userId);
+        return (
+          r.plan.toLowerCase().includes(q) ||
+          r.status.toLowerCase().includes(q) ||
+          (member?.fullName && member.fullName.toLowerCase().includes(q)) ||
+          (member?.phoneNumber && member.phoneNumber.includes(q))
+        );
+      });
+    }
+    return list;
+  };
+
   return (
     <View style={[styles.container, { paddingTop: Math.max(insets.top, 15) }]}>
       <View style={styles.header}>
@@ -746,35 +946,65 @@ export default function AdminMembersScreen() {
       </View>
 
       {/* Filter Tabs */}
-      <View style={styles.filterTabs}>
-        {(['All', 'Active', 'Expiring', 'Expired'] as FilterType[]).map(filter => (
-          <TouchableOpacity
-            key={filter}
-            style={[
-              styles.filterTab,
-              activeFilter === filter && styles.activeFilterTab,
-            ]}
-            onPress={() => handleFilterChange(filter)}
-            activeOpacity={0.7}
-          >
-            <Text
+      <View style={{ marginVertical: 5 }}>
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={styles.filterTabsContent}
+        >
+          {(['All', 'Active', 'Expiring', 'Expired', 'Requests'] as FilterType[]).map(filter => (
+            <TouchableOpacity
+              key={filter}
               style={[
-                styles.filterTabText,
-                activeFilter === filter && styles.activeFilterTabText,
+                styles.filterTab,
+                activeFilter === filter && styles.activeFilterTab,
               ]}
+              onPress={() => handleFilterChange(filter)}
+              activeOpacity={0.7}
             >
-              {filter === 'Expiring' ? 'EXPIRING (7d)' : filter.toUpperCase()}
-            </Text>
-          </TouchableOpacity>
-        ))}
+              <Text
+                style={[
+                  styles.filterTabText,
+                  activeFilter === filter && styles.activeFilterTabText,
+                ]}
+              >
+                {filter === 'Expiring'
+                  ? 'EXPIRING (7d)'
+                  : filter === 'Requests'
+                  ? `REQUESTS${pendingRequestsCount > 0 ? ` (${pendingRequestsCount})` : ''}`
+                  : filter.toUpperCase()}
+              </Text>
+            </TouchableOpacity>
+          ))}
+        </ScrollView>
       </View>
 
-      {/* Member List */}
-      {loading && !refreshing ? (
+      {/* Member or Requests List */}
+      {(loading || loadingRequests) && !refreshing ? (
         <View style={styles.loadingContainer}>
           <ActivityIndicator size="large" color="black" />
           <Text style={styles.loadingText}>Fetching registry data...</Text>
         </View>
+      ) : activeFilter === 'Requests' ? (
+        <FlatList
+          data={getFilteredRequests()}
+          keyExtractor={item => item.id}
+          renderItem={renderRequestCard}
+          contentContainerStyle={styles.listContent}
+          initialNumToRender={10}
+          maxToRenderPerBatch={10}
+          windowSize={5}
+          refreshControl={
+            <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="black" />
+          }
+          ListEmptyComponent={
+            <View style={styles.emptyState}>
+              <Ionicons name="card-outline" size={48} color="#AAA" />
+              <Text style={styles.emptyText}>No membership requests</Text>
+              <Text style={styles.emptySubtext}>Member plan requests will appear here</Text>
+            </View>
+          }
+        />
       ) : (
         <FlatList
           data={filteredMembers}
@@ -2411,5 +2641,104 @@ const styles = StyleSheet.create({
   },
   attToggleBtnTextActive: {
     color: 'white',
+  },
+  filterTabsContent: {
+    paddingHorizontal: 20,
+    flexDirection: 'row',
+    gap: 8,
+  },
+  requestCard: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 16,
+    padding: 16,
+    marginBottom: 14,
+    borderWidth: 1.5,
+    borderColor: '#EAEAEA',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 5,
+    elevation: 2,
+  },
+  requestHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  requestMemberName: {
+    fontFamily: 'Oswald_700Bold',
+    fontSize: 17,
+    color: '#111111',
+    letterSpacing: 0.5,
+  },
+  requestMemberPhone: {
+    fontFamily: 'Oswald_400Regular',
+    fontSize: 13,
+    color: '#666666',
+    marginTop: 2,
+  },
+  requestDivider: {
+    height: 1,
+    backgroundColor: '#F0F0F0',
+    marginVertical: 12,
+  },
+  requestBody: {
+    marginBottom: 14,
+  },
+  requestMetaRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 6,
+  },
+  requestMetaLabel: {
+    fontFamily: 'Oswald_600SemiBold',
+    fontSize: 12,
+    color: '#777777',
+    letterSpacing: 1,
+  },
+  requestMetaValue: {
+    fontFamily: 'Oswald_700Bold',
+    fontSize: 13,
+    color: '#111111',
+  },
+  requestActionsRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    gap: 10,
+    marginTop: 4,
+  },
+  requestRejectBtn: {
+    flex: 1,
+    paddingVertical: 10,
+    borderRadius: 8,
+    borderWidth: 1.5,
+    borderColor: '#E53935',
+    backgroundColor: '#FFFFFF',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  requestRejectBtnText: {
+    fontFamily: 'Oswald_700Bold',
+    fontSize: 12,
+    color: '#E53935',
+    letterSpacing: 1,
+  },
+  requestApproveBtn: {
+    flex: 2,
+    paddingVertical: 10,
+    borderRadius: 8,
+    backgroundColor: '#111111',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  requestApproveBtnText: {
+    fontFamily: 'Oswald_700Bold',
+    fontSize: 12,
+    color: '#FFFFFF',
+    letterSpacing: 1,
+  },
+  disabledButton: {
+    opacity: 0.5,
   },
 });

@@ -1,18 +1,19 @@
 import { auth } from '../FirebaseConfig';
-import { saveMembership, localDateString, type Membership } from './userStorage';
+import {
+  createMembershipRequest,
+  localDateString,
+  type Membership,
+  type MembershipPlanType,
+  type MembershipRequest,
+} from './userStorage';
 
-export const purchaseMembership = async (
-  plan: 'Basic' | 'Standard' | 'Wellness' | 'Platinum'
-): Promise<Membership> => {
-  const uid = auth.currentUser?.uid;
-  if (!uid) {
-    throw new Error('No user is currently logged in.');
-  }
+// Helper to calculate plan start and end dates based on gym business rules
+export const calculatePlanDates = (
+  plan: MembershipPlanType,
+  startDate: Date = new Date()
+): Membership => {
+  const endDate = new Date(startDate);
 
-  const startDate = new Date();
-  const endDate = new Date();
-
-  // Dynamic plan durations
   if (plan === 'Basic') {
     endDate.setDate(startDate.getDate() + 30); // 30 days
   } else if (plan === 'Standard') {
@@ -23,13 +24,23 @@ export const purchaseMembership = async (
     endDate.setFullYear(startDate.getFullYear() + 1); // 1 year
   }
 
-  const membership: Membership = {
+  return {
     plan,
     startDate: localDateString(startDate),
     endDate: localDateString(endDate),
     createdAt: startDate.toISOString(),
+    status: 'active',
   };
+};
 
-  await saveMembership(uid, membership);
-  return membership;
+// Member submits a request to staff for plan activation
+export const requestMembershipPlan = async (
+  plan: MembershipPlanType,
+  requestType: 'new' | 'renewal' = 'new'
+): Promise<MembershipRequest> => {
+  const uid = auth.currentUser?.uid;
+  if (!uid) {
+    throw new Error('No user is currently logged in.');
+  }
+  return createMembershipRequest(uid, plan, requestType);
 };

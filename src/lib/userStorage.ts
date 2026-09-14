@@ -11,6 +11,9 @@ import {
   writeBatch,
   addDoc,
   updateDoc,
+  runTransaction,
+  query,
+  where,
   deleteField,
   type FieldValue,
 } from 'firebase/firestore';
@@ -28,7 +31,22 @@ export type UserProfile = {
   role?: 'admin' | 'owner' | 'member';
 };
 
-export type Membership = { plan: 'Basic' | 'Standard' | 'Wellness' | 'Platinum'; startDate: string; endDate: string; createdAt: string; status?: 'active' | 'inactive' };
+export type MembershipPlanType = 'Basic' | 'Standard' | 'Wellness' | 'Platinum';
+
+export type Membership = { plan: MembershipPlanType; startDate: string; endDate: string; createdAt: string; status?: 'active' | 'inactive' };
+
+export type MembershipRequestStatus = 'pending' | 'approved' | 'rejected' | 'cancelled';
+
+export type MembershipRequest = {
+  id: string;
+  userId: string;
+  plan: MembershipPlanType;
+  status: MembershipRequestStatus;
+  requestedAt: string;         // ISO timestamp
+  requestType?: 'new' | 'renewal';
+  reviewedAt?: string;        // ISO timestamp
+  reviewedBy?: string;        // admin UID
+};
 
 export type AttendanceRecord = {
   id: string;
@@ -145,21 +163,22 @@ export const fetchUserProfile = async (uid: string): Promise<UserProfile | null>
 
 // Authoritative role & route resolution with strict fail-closed behavior
 export const resolveUserRoute = async (uid: string): Promise<'AdminMain' | 'Main' | 'Detail'> => {
+  console.log(`[AUTH] resolving route: ${uid}`);
   try {
     const userDoc = await getDoc(doc(db, 'users', uid));
     if (userDoc.exists()) {
       const remoteData = userDoc.data() as UserProfile;
       await AsyncStorage.setItem(profileKey(uid), JSON.stringify(remoteData));
-      if (remoteData.role === 'owner' || remoteData.role === 'admin') {
-        return 'AdminMain';
-      }
-      return 'Main';
+      const target = (remoteData.role === 'owner' || remoteData.role === 'admin') ? 'AdminMain' : 'Main';
+      console.log(`[AUTH] resolved route: ${target} (docExists: true, role: ${remoteData.role || 'undefined'})`);
+      return target;
     }
+    console.log(`[AUTH] resolved route: Detail (docExists: false in /users/${uid})`);
     return 'Detail';
   } catch (error) {
-    console.warn('Authoritative Firestore profile verification failed (defaulting to Detail):', error);
-    // Strict fail-closed: do NOT use local cache to authorize routes or grant access
-    return 'Detail';
+    console.error(`[AUTH] resolveUserRoute error:`, error);
+    // Propagate the network / read failure so the caller does not mistake a connection error for a missing profile
+    throw error;
   }
 };
 
@@ -200,6 +219,204 @@ export const saveMembership = async (uid: string, membership: Membership): Promi
     await AsyncStorage.setItem(membershipKey(uid), JSON.stringify(membership));
   } catch (error) {
     console.error(`Failed to save membership to Firestore for user ${uid}:`, error);
+    throw error;
+  }
+};
+
+// Check if a member has an active pending membership request
+export const getPendingMembershipRequest = async (uid: string): Promise<MembershipRequest | null> => {
+  try {
+    const qSnap = await getDocs(
+      query(
+        collection(db, 'membershipRequests'),
+        where('userId', '==', uid),
+        where('status', '==', 'pending')
+      )
+    );
+    if (!qSnap.empty) {
+      const docSnap = qSnap.docs[0];
+      return { id: docSnap.id, ...(docSnap.data() as Omit<MembershipRequest, 'id'>) };
+    }
+    return null;
+  } catch (error) {
+    console.error('Failed to check pending membership requests:', error);
+    return null;
+  }
+};
+
+// Member creates a membership request in /membershipRequests
+// Note: This application-level check verifies existing pending requests before addDoc.
+// It guards against normal duplicate submissions; deterministic per-user request deduplication
+// is intentionally not enforced at the document-ID level here to preserve historical request records.
+export const createMembershipRequest = async (
+  uid: string,
+  plan: MembershipPlanType,
+  requestType: 'new' | 'renewal' = 'new'
+): Promise<MembershipRequest> => {
+  const existingPending = await getPendingMembershipRequest(uid);
+  if (existingPending) {
+    throw new Error('You already have a membership request pending.');
+  }
+
+  const payload: Omit<MembershipRequest, 'id'> = {
+    userId: uid,
+    plan,
+    status: 'pending',
+    requestedAt: new Date().toISOString(),
+    requestType,
+  };
+
+  const docRef = await addDoc(collection(db, 'membershipRequests'), payload);
+  return {
+    id: docRef.id,
+    ...payload,
+  };
+};
+
+// Fetch membership requests for a specific member
+export const getMembershipRequests = async (uid: string): Promise<MembershipRequest[]> => {
+  try {
+    const qSnap = await getDocs(
+      query(collection(db, 'membershipRequests'), where('userId', '==', uid))
+    );
+    return qSnap.docs.map((d) => ({ id: d.id, ...(d.data() as Omit<MembershipRequest, 'id'>) }));
+  } catch (error) {
+    console.error('Failed to get member membership requests:', error);
+    return [];
+  }
+};
+
+// Admin fetches all membership requests
+export const getAllMembershipRequests = async (): Promise<MembershipRequest[]> => {
+  try {
+    const qSnap = await getDocs(collection(db, 'membershipRequests'));
+    return qSnap.docs.map((d) => ({ id: d.id, ...(d.data() as Omit<MembershipRequest, 'id'>) }));
+  } catch (error) {
+    console.error('Failed to get all membership requests:', error);
+    return [];
+  }
+};
+
+// Admin approves a request and activates the membership transactionally
+export const approveMembershipRequest = async (
+  requestId: string,
+  adminUid: string,
+  startDate: Date = new Date()
+): Promise<Membership> => {
+  let activatedMembership: Membership | null = null;
+  let targetUserId = '';
+
+  try {
+    await runTransaction(db, async (transaction) => {
+      // 1. Read membership request
+      const requestRef = doc(db, 'membershipRequests', requestId);
+      const requestDoc = await transaction.get(requestRef);
+
+      if (!requestDoc.exists()) {
+        throw new Error('Membership request not found.');
+      }
+
+      const requestData = requestDoc.data() as Omit<MembershipRequest, 'id'>;
+
+      if (requestData.status !== 'pending') {
+        throw new Error('This membership request is no longer pending.');
+      }
+
+      targetUserId = requestData.userId;
+      if (!targetUserId) {
+        throw new Error('Invalid user ID associated with this request.');
+      }
+
+      // 2. Read target user profile inside the same transaction
+      const userRef = doc(db, 'users', targetUserId);
+      const userDoc = await transaction.get(userRef);
+
+      if (!userDoc.exists()) {
+        throw new Error('Member profile not found.');
+      }
+
+      // 3. Calculate authoritative membership dates and plan directly from the request
+      const endDate = new Date(startDate);
+      const plan = requestData.plan;
+
+      if (plan === 'Basic') {
+        endDate.setDate(startDate.getDate() + 30);
+      } else if (plan === 'Standard') {
+        endDate.setMonth(startDate.getMonth() + 3);
+      } else if (plan === 'Wellness') {
+        endDate.setMonth(startDate.getMonth() + 1);
+      } else if (plan === 'Platinum') {
+        endDate.setFullYear(startDate.getFullYear() + 1);
+      }
+
+      const membershipPayload: Membership = {
+        plan,
+        startDate: localDateString(startDate),
+        endDate: localDateString(endDate),
+        createdAt: startDate.toISOString(),
+        status: 'active',
+      };
+
+      activatedMembership = membershipPayload;
+
+      // 4. Authoritative membership activation in /users/{targetUserId}/membership/current
+      const membershipRef = doc(db, 'users', targetUserId, 'membership', 'current');
+      transaction.set(membershipRef, membershipPayload);
+
+      // 5. Request status update to 'approved' with audit fields
+      const reviewedAt = new Date().toISOString();
+      transaction.update(requestRef, {
+        status: 'approved',
+        reviewedAt,
+        reviewedBy: adminUid,
+      });
+    });
+  } catch (error) {
+    console.error('Failed to transactionally approve membership request:', error);
+    throw error;
+  }
+
+  // Attempt local storage cache update without throwing if cache write fails
+  if (targetUserId && activatedMembership) {
+    try {
+      await AsyncStorage.setItem(membershipKey(targetUserId), JSON.stringify(activatedMembership));
+    } catch (cacheError) {
+      console.warn('AsyncStorage cache write failed after approval:', cacheError);
+    }
+  }
+
+  return activatedMembership!;
+};
+
+// Admin rejects a membership request transactionally
+export const rejectMembershipRequest = async (
+  requestId: string,
+  adminUid: string
+): Promise<void> => {
+  try {
+    await runTransaction(db, async (transaction) => {
+      const requestRef = doc(db, 'membershipRequests', requestId);
+      const requestDoc = await transaction.get(requestRef);
+
+      if (!requestDoc.exists()) {
+        throw new Error('Membership request not found.');
+      }
+
+      const requestData = requestDoc.data() as Omit<MembershipRequest, 'id'>;
+
+      if (requestData.status !== 'pending') {
+        throw new Error('This membership request is no longer pending.');
+      }
+
+      const reviewedAt = new Date().toISOString();
+      transaction.update(requestRef, {
+        status: 'rejected',
+        reviewedAt,
+        reviewedBy: adminUid,
+      });
+    });
+  } catch (error) {
+    console.error('Failed to transactionally reject membership request:', error);
     throw error;
   }
 };
