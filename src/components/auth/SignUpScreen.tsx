@@ -39,7 +39,8 @@ export default function SignUpScreen({ navigation }: Props) {
       await signInWithCredential(auth, credential);
       const uid = auth.currentUser!.uid;
       const targetRoute = await resolveUserRoute(uid);
-      navigation.replace(targetRoute);
+      console.log(`[NAV] SignUpScreen (Google) -> resetting navigation to ${targetRoute} for user ${uid}`);
+      navigation.reset({ index: 0, routes: [{ name: targetRoute }] });
     } catch (err: any) {
       console.error('Google Sign-In error:', err);
       setError('Google sign-in failed. Try again.');
@@ -63,7 +64,8 @@ export default function SignUpScreen({ navigation }: Props) {
       if (userCredential.user && username.trim()) {
         await updateProfile(userCredential.user, { displayName: username.trim() });
       }
-      navigation.replace('Detail');
+      console.log(`[NAV] SignUpScreen -> successful sign up for ${userCredential.user.uid}, resetting navigation to Detail`);
+      navigation.reset({ index: 0, routes: [{ name: 'Detail' }] });
     } catch (err: any) {
       const code = err.code ?? err.message ?? '';
       if (code.includes('auth/email-already-in-use')) setError('This email is already in use.');

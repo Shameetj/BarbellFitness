@@ -38,6 +38,7 @@ export default function LoginScreen({ navigation }: Props) {
       await signInWithCredential(auth, credential);
       const uid = auth.currentUser!.uid;
       const targetRoute = await resolveUserRoute(uid);
+      console.log(`[NAV] LoginScreen (Google) -> resetting navigation to ${targetRoute} for user ${uid}`);
       navigation.reset({ index: 0, routes: [{ name: targetRoute }] });
     } catch (err: any) {
       console.error('Google Sign-In error:', err);
@@ -60,6 +61,7 @@ export default function LoginScreen({ navigation }: Props) {
       await signInWithEmailAndPassword(auth, email.trim(), password);
       const uid = auth.currentUser!.uid;
       const targetRoute = await resolveUserRoute(uid);
+      console.log(`[NAV] LoginScreen -> resetting navigation to ${targetRoute} for user ${uid}`);
       navigation.reset({ index: 0, routes: [{ name: targetRoute }] });
     } catch (err: any) {
       const code = err.code ?? err.message ?? '';

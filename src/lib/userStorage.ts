@@ -161,16 +161,38 @@ export const fetchUserProfile = async (uid: string): Promise<UserProfile | null>
   }
 };
 
+// Helper to verify if a user's Firestore profile has all required fields completed
+export const isProfileComplete = (profile?: UserProfile | null): boolean => {
+  if (!profile) return false;
+  // Admin and owner profiles are considered complete
+  if (profile.role === 'admin' || profile.role === 'owner') {
+    return true;
+  }
+  // Member profiles require at least full name and phone number
+  return Boolean(
+    profile.fullName &&
+    profile.fullName.trim().length > 0 &&
+    profile.phoneNumber &&
+    profile.phoneNumber.trim().length > 0
+  );
+};
+
 // Authoritative role & route resolution with strict fail-closed behavior
 export const resolveUserRoute = async (uid: string): Promise<'AdminMain' | 'Main' | 'Detail'> => {
-  console.log(`[AUTH] resolving route: ${uid}`);
+  console.log(`[AUTH] resolving route for uid: ${uid}`);
   try {
     const userDoc = await getDoc(doc(db, 'users', uid));
     if (userDoc.exists()) {
       const remoteData = userDoc.data() as UserProfile;
       await AsyncStorage.setItem(profileKey(uid), JSON.stringify(remoteData));
+
+      if (!isProfileComplete(remoteData)) {
+        console.log(`[AUTH] resolved route: Detail (profile incomplete in /users/${uid})`);
+        return 'Detail';
+      }
+
       const target = (remoteData.role === 'owner' || remoteData.role === 'admin') ? 'AdminMain' : 'Main';
-      console.log(`[AUTH] resolved route: ${target} (docExists: true, role: ${remoteData.role || 'undefined'})`);
+      console.log(`[AUTH] resolved route: ${target} (docExists: true, role: ${remoteData.role || 'member'}, isComplete: true)`);
       return target;
     }
     console.log(`[AUTH] resolved route: Detail (docExists: false in /users/${uid})`);

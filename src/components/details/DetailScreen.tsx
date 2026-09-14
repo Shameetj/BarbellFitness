@@ -109,7 +109,8 @@ export default function DetailScreen({ navigation }: Props) {
     }
     try {
       await saveProfile(uid, profile);
-      navigation.navigate('MemberPlan');
+      console.log(`[NAV] DetailScreen -> profile saved for user ${uid}, resetting navigation to MemberPlan`);
+      navigation.reset({ index: 0, routes: [{ name: 'MemberPlan' }] });
     } catch (error) {
       console.warn('Failed saving profile', error);
       Alert.alert('Could not save profile', 'Your details were not saved. Please try again.');

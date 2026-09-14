@@ -72,6 +72,8 @@ export default function AdminMembersScreen() {
   const [detailModalVisible, setDetailModalVisible] = useState(false);
   const [addModalVisible, setAddModalVisible] = useState(false);
   const [editMode, setEditMode] = useState(false);
+  const [confirmApproveModalVisible, setConfirmApproveModalVisible] = useState(false);
+  const [requestToApprove, setRequestToApprove] = useState<MembershipRequest | null>(null);
 
   // Attendance state & request guard
   const [attendanceList, setAttendanceList] = useState<AttendanceRecord[]>([]);
@@ -685,39 +687,55 @@ export default function AdminMembersScreen() {
     setFormStartDate(new Date());
   };
 
-  const handleApproveRequest = async (req: MembershipRequest) => {
+  const handleApproveRequest = (req: MembershipRequest) => {
+    console.log('[MEMBERSHIP] APPROVE BUTTON PRESSED', {
+      requestId: req.id,
+      userId: req.userId,
+      plan: req.plan,
+      status: req.status,
+      currentAuthUid: auth.currentUser?.uid,
+    });
+
     const adminUid = auth.currentUser?.uid;
     if (!adminUid) {
       Alert.alert('Error', 'Authenticated admin session is required.');
       return;
     }
 
+    setRequestToApprove(req);
+    setConfirmApproveModalVisible(true);
+  };
+
+  const handleConfirmApproval = async () => {
+    if (!requestToApprove) return;
+    const req = requestToApprove;
+    const adminUid = auth.currentUser?.uid;
+    if (!adminUid) {
+      Alert.alert('Error', 'Authenticated admin session is required.');
+      setConfirmApproveModalVisible(false);
+      setRequestToApprove(null);
+      return;
+    }
+
     const member = members.find(m => m.uid === req.userId);
     const memberName = member?.fullName || `User (${req.userId.substring(0, 8)})`;
 
-    Alert.alert(
-      'Confirm Activation',
-      `Activate ${req.plan} Plan for ${memberName}?`,
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Approve & Activate',
-          onPress: async () => {
-            setProcessingRequestId(req.id);
-            try {
-              await approveMembershipRequest(req.id, adminUid);
-              Alert.alert('Success', `Membership activated for ${memberName}.`);
-              await fetchMembers();
-            } catch (err: any) {
-              console.error('Failed to approve request:', err);
-              Alert.alert('Error', err?.message || 'Failed to approve membership request.');
-            } finally {
-              setProcessingRequestId(null);
-            }
-          },
-        },
-      ]
-    );
+    setProcessingRequestId(req.id);
+    try {
+      console.log('[MEMBERSHIP] Calling approveMembershipRequest for requestId:', req.id, 'adminUid:', adminUid);
+      const activated = await approveMembershipRequest(req.id, adminUid);
+      console.log('[MEMBERSHIP] approveMembershipRequest returned successfully:', activated);
+      setConfirmApproveModalVisible(false);
+      setRequestToApprove(null);
+      Alert.alert('Success', `Membership activated for ${memberName}.`);
+      await fetchMembers();
+      await fetchRequests();
+    } catch (err: any) {
+      console.error('Failed to approve request:', err);
+      Alert.alert('Error', err?.message || 'Failed to approve membership request.');
+    } finally {
+      setProcessingRequestId(null);
+    }
   };
 
   const handleRejectRequest = async (req: MembershipRequest) => {
@@ -1887,6 +1905,83 @@ export default function AdminMembersScreen() {
           </View>
         </View>
       </Modal>
+
+      {/* Membership Approval Confirmation Modal */}
+      <Modal
+        visible={confirmApproveModalVisible && !!requestToApprove}
+        animationType="fade"
+        transparent
+        onRequestClose={() => {
+          if (!processingRequestId) {
+            setConfirmApproveModalVisible(false);
+            setRequestToApprove(null);
+          }
+        }}
+      >
+        <View style={styles.confirmModalOverlay}>
+          <View style={styles.confirmModalCard}>
+            <Text style={styles.confirmModalTitle}>CONFIRM ACTIVATION</Text>
+
+            {requestToApprove && (
+              <View style={styles.confirmModalMetaBox}>
+                <View style={styles.confirmModalRow}>
+                  <Text style={styles.confirmModalLabel}>MEMBER</Text>
+                  <Text style={styles.confirmModalValue}>
+                    {members.find(m => m.uid === requestToApprove.userId)?.fullName ||
+                      `User (${requestToApprove.userId.substring(0, 8)})`}
+                  </Text>
+                </View>
+                <View style={styles.confirmModalRow}>
+                  <Text style={styles.confirmModalLabel}>REQUESTED PLAN</Text>
+                  <Text style={styles.confirmModalValue}>
+                    {requestToApprove.plan.toUpperCase()} PLAN
+                  </Text>
+                </View>
+                <View style={[styles.confirmModalRow, { marginBottom: 0 }]}>
+                  <Text style={styles.confirmModalLabel}>REQUEST TYPE</Text>
+                  <Text style={styles.confirmModalValue}>
+                    {(requestToApprove.requestType || 'new').toUpperCase()}
+                  </Text>
+                </View>
+              </View>
+            )}
+
+            <Text style={styles.confirmModalBody}>
+              Are you sure you want to approve this membership request and activate the plan immediately?
+            </Text>
+
+            <View style={styles.confirmModalActions}>
+              <TouchableOpacity
+                style={styles.confirmCancelBtn}
+                onPress={() => {
+                  setConfirmApproveModalVisible(false);
+                  setRequestToApprove(null);
+                }}
+                disabled={!!processingRequestId}
+                activeOpacity={0.7}
+              >
+                <Text style={styles.confirmCancelBtnText}>CANCEL</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={[
+                  styles.confirmApproveBtn,
+                  !!processingRequestId && styles.disabledButton,
+                ]}
+                onPress={handleConfirmApproval}
+                disabled={!!processingRequestId}
+                activeOpacity={0.8}
+              >
+                {processingRequestId ? (
+                  <ActivityIndicator color="white" size="small" />
+                ) : (
+                  <Text style={styles.confirmApproveBtnText}>APPROVE & ACTIVATE</Text>
+                )}
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 }
@@ -2740,5 +2835,99 @@ const styles = StyleSheet.create({
   },
   disabledButton: {
     opacity: 0.5,
+  },
+  confirmModalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.6)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 20,
+  },
+  confirmModalCard: {
+    width: '100%',
+    maxWidth: 380,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 20,
+    padding: 24,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.25,
+    shadowRadius: 12,
+    elevation: 8,
+  },
+  confirmModalTitle: {
+    fontFamily: 'BebasNeue_400Regular',
+    fontSize: 28,
+    color: '#111111',
+    letterSpacing: 2,
+    textAlign: 'center',
+    marginBottom: 8,
+  },
+  confirmModalBody: {
+    fontFamily: 'Oswald_400Regular',
+    fontSize: 14,
+    color: '#444444',
+    textAlign: 'center',
+    lineHeight: 20,
+    marginBottom: 20,
+  },
+  confirmModalMetaBox: {
+    backgroundColor: '#F8F8F8',
+    borderWidth: 1.5,
+    borderColor: '#EAEAEA',
+    borderRadius: 12,
+    padding: 14,
+    marginVertical: 14,
+  },
+  confirmModalRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginBottom: 6,
+  },
+  confirmModalLabel: {
+    fontFamily: 'Oswald_600SemiBold',
+    fontSize: 11,
+    color: '#777777',
+    letterSpacing: 0.5,
+  },
+  confirmModalValue: {
+    fontFamily: 'Oswald_700Bold',
+    fontSize: 13,
+    color: '#111111',
+  },
+  confirmModalActions: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    gap: 12,
+  },
+  confirmCancelBtn: {
+    flex: 1,
+    height: 48,
+    borderRadius: 10,
+    borderWidth: 1.5,
+    borderColor: '#CCCCCC',
+    backgroundColor: '#FFFFFF',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  confirmCancelBtnText: {
+    fontFamily: 'Oswald_700Bold',
+    fontSize: 13,
+    color: '#555555',
+    letterSpacing: 1,
+  },
+  confirmApproveBtn: {
+    flex: 1.5,
+    height: 48,
+    borderRadius: 10,
+    backgroundColor: '#111111',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  confirmApproveBtnText: {
+    fontFamily: 'Oswald_700Bold',
+    fontSize: 13,
+    color: '#FFFFFF',
+    letterSpacing: 1,
   },
 });
