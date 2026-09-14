@@ -819,6 +819,29 @@ export const getWorkout = async (uid: string, workoutId: string): Promise<Workou
   }
 };
 
+/**
+ * Recursively removes undefined object properties to ensure safe serialization for Firestore.
+ * Preserves null, primitives (string, number, boolean), and arrays without mutating input data.
+ */
+export const removeUndefinedFields = <T>(value: T): T => {
+  if (value === null || value === undefined || typeof value !== 'object') {
+    return value;
+  }
+
+  if (Array.isArray(value)) {
+    return value.map((item) => removeUndefinedFields(item)) as unknown as T;
+  }
+
+  const sanitized: Record<string, any> = {};
+  for (const [key, val] of Object.entries(value as Record<string, any>)) {
+    if (val !== undefined) {
+      sanitized[key] = removeUndefinedFields(val);
+    }
+  }
+
+  return sanitized as T;
+};
+
 // Create a workout document in Firestore: /users/{uid}/workouts/{workoutId}
 export const createWorkout = async (
   uid: string,
@@ -848,7 +871,8 @@ export const createWorkout = async (
       updatedAt: now,
     };
 
-    await setDoc(docRef, sessionData);
+    const sanitizedData = removeUndefinedFields(sessionData);
+    await setDoc(docRef, sanitizedData);
     return docRef.id;
   } catch (error) {
     console.error(`Failed to create workout in Firestore for user ${uid}:`, error);
@@ -877,7 +901,8 @@ export const updateWorkout = async (
       payload.totalSets = stats.totalSets;
     }
 
-    await updateDoc(doc(db, 'users', uid, 'workouts', workoutId), payload);
+    const sanitizedPayload = removeUndefinedFields(payload);
+    await updateDoc(doc(db, 'users', uid, 'workouts', workoutId), sanitizedPayload);
   } catch (error) {
     console.error(`Failed to update workout ${workoutId} for user ${uid}:`, error);
     throw error;
