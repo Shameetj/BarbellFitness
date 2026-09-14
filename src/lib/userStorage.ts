@@ -8,6 +8,7 @@ import {
   getDoc,
   getDocs,
   deleteDoc,
+  writeBatch,
 } from 'firebase/firestore';
 
 export type UserProfile = {
@@ -113,8 +114,33 @@ export const saveProfile = async (uid: string, profile: UserProfile) => {
   }
 };
 
-export const getMembership = (uid: string) => readJson<Membership>(membershipKey(uid));
-export const saveMembership = (uid: string, membership: Membership) => AsyncStorage.setItem(membershipKey(uid), JSON.stringify(membership));
+// Fetch membership directly from Firestore subcollection: /users/{uid}/membership/current
+export const getMembership = async (uid: string): Promise<Membership | null> => {
+  try {
+    const memDoc = await getDoc(doc(db, 'users', uid, 'membership', 'current'));
+    if (memDoc.exists()) {
+      const remoteData = memDoc.data() as Membership;
+      await AsyncStorage.setItem(membershipKey(uid), JSON.stringify(remoteData));
+      return remoteData;
+    }
+    return null;
+  } catch (error) {
+    console.error(`Failed to fetch membership from Firestore for user ${uid}:`, error);
+    return null;
+  }
+};
+
+// Write membership directly to Firestore subcollection: /users/{uid}/membership/current
+export const saveMembership = async (uid: string, membership: Membership): Promise<void> => {
+  try {
+    await setDoc(doc(db, 'users', uid, 'membership', 'current'), membership);
+    await AsyncStorage.setItem(membershipKey(uid), JSON.stringify(membership));
+  } catch (error) {
+    console.error(`Failed to save membership to Firestore for user ${uid}:`, error);
+    throw error;
+  }
+};
+
 export const getPrs = (uid: string) => readJson<Record<string, string>>(prsKey(uid));
 export const savePrs = (uid: string, prs: Record<string, string>) => AsyncStorage.setItem(prsKey(uid), JSON.stringify(prs));
 export const getProfileImage = (uid: string) => AsyncStorage.getItem(imageKey(uid));
@@ -170,7 +196,10 @@ export const getAllMembers = async (): Promise<AdminMember[]> => {
 // Delete/Remove member (Firestore first, clean up local cache only on success)
 export const deleteMember = async (uid: string): Promise<void> => {
   try {
-    await deleteDoc(doc(db, 'users', uid));
+    const batch = writeBatch(db);
+    batch.delete(doc(db, 'users', uid));
+    batch.delete(doc(db, 'users', uid, 'membership', 'current'));
+    await batch.commit();
   } catch (error) {
     console.error('Firestore member delete failed:', error);
     throw error;
