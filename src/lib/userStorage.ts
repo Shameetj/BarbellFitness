@@ -11,7 +11,11 @@ import {
   writeBatch,
   addDoc,
   updateDoc,
+  deleteField,
+  type FieldValue,
 } from 'firebase/firestore';
+
+export { deleteField };
 
 export type UserProfile = {
   fullName: string;
@@ -282,7 +286,7 @@ export const saveAttendance = async (
 export const updateAttendance = async (
   uid: string,
   attendanceId: string,
-  attendance: Partial<Omit<AttendanceRecord, 'id'>>
+  attendance: Partial<Omit<AttendanceRecord, 'id'>> & { checkOutTime?: string | FieldValue }
 ): Promise<void> => {
   try {
     await updateDoc(doc(db, 'users', uid, 'attendance', attendanceId), attendance);

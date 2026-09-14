@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
 import {
   StyleSheet,
   Text,
@@ -8,13 +8,11 @@ import {
   FlatList,
   Modal,
   Alert,
-  Platform,
   Image,
   Linking,
   ScrollView,
   RefreshControl,
   ActivityIndicator,
-  useWindowDimensions,
 } from 'react-native';
 import { useFonts, BebasNeue_400Regular } from '@expo-google-fonts/bebas-neue';
 import { Oswald_400Regular, Oswald_600SemiBold, Oswald_700Bold } from '@expo-google-fonts/oswald';
@@ -23,6 +21,7 @@ import * as ImagePicker from 'expo-image-picker';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useIsFocused } from '@react-navigation/native';
+import { auth } from '../../FirebaseConfig';
 import {
   getAllMembers,
   saveProfile,
@@ -30,15 +29,20 @@ import {
   saveProfileImage,
   deleteMember,
   localDateString,
+  getAttendance,
+  saveAttendance,
+  updateAttendance,
+  deleteAttendance,
+  deleteField,
   type AdminMember,
   type Membership,
   type UserProfile,
+  type AttendanceRecord,
 } from '../../lib/userStorage';
 
 type FilterType = 'All' | 'Active' | 'Expiring' | 'Expired';
 
 export default function AdminMembersScreen() {
-  const { width } = useWindowDimensions();
   const insets = useSafeAreaInsets();
   const isFocused = useIsFocused();
 
@@ -62,6 +66,25 @@ export default function AdminMembersScreen() {
   const [addModalVisible, setAddModalVisible] = useState(false);
   const [editMode, setEditMode] = useState(false);
 
+  // Attendance state & request guard
+  const [attendanceList, setAttendanceList] = useState<AttendanceRecord[]>([]);
+  const [loadingAttendance, setLoadingAttendance] = useState(false);
+  const attendanceRequestIdRef = useRef(0);
+
+  // Manage / Edit Attendance Modal state
+  const [manageAttendanceModalVisible, setManageAttendanceModalVisible] = useState(false);
+  const [editingAttendanceRecord, setEditingAttendanceRecord] = useState<AttendanceRecord | null>(null);
+  const [attDate, setAttDate] = useState(new Date());
+  const [attCheckInTime, setAttCheckInTime] = useState(new Date());
+  const [attCheckOutTime, setAttCheckOutTime] = useState<Date | null>(null);
+  const [attHasCheckOut, setAttHasCheckOut] = useState(false);
+  const [attStatus, setAttStatus] = useState<'present' | 'completed'>('present');
+
+  // Attendance Date/Time Pickers
+  const [showAttDatePicker, setShowAttDatePicker] = useState(false);
+  const [showAttCheckInPicker, setShowAttCheckInPicker] = useState(false);
+  const [showAttCheckOutPicker, setShowAttCheckOutPicker] = useState(false);
+
   // Form states (Add / Edit)
   const [formName, setFormName] = useState('');
   const [formAge, setFormAge] = useState('');
@@ -81,6 +104,238 @@ export default function AdminMembersScreen() {
   const [renewDate, setRenewDate] = useState(new Date());
   const [renewPlan, setRenewPlan] = useState<'Basic' | 'Standard' | 'Wellness' | 'Platinum'>('Standard');
   const [renewing, setRenewing] = useState(false);
+
+  const fetchMemberAttendance = async (uid: string) => {
+    const requestId = ++attendanceRequestIdRef.current;
+    try {
+      setLoadingAttendance(true);
+      const records = await getAttendance(uid);
+      if (requestId !== attendanceRequestIdRef.current) {
+        return;
+      }
+      const sorted = records.sort((a, b) => {
+        const timeA = a.checkInTime || a.createdAt || a.date;
+        const timeB = b.checkInTime || b.createdAt || b.date;
+        return timeB.localeCompare(timeA);
+      });
+      setAttendanceList(sorted);
+    } catch (error) {
+      if (requestId !== attendanceRequestIdRef.current) {
+        return;
+      }
+      console.error('Failed to load member attendance', error);
+      setAttendanceList([]);
+    } finally {
+      if (requestId === attendanceRequestIdRef.current) {
+        setLoadingAttendance(false);
+      }
+    }
+  };
+
+  const formatTimeDisplay = (isoString?: string) => {
+    if (!isoString) return '--';
+    try {
+      const d = new Date(isoString);
+      if (isNaN(d.getTime())) return isoString;
+      return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    } catch {
+      return isoString;
+    }
+  };
+
+  const handleCheckInNow = async () => {
+    if (!selectedMember) return;
+    const currentUser = auth.currentUser;
+    if (!currentUser) {
+      Alert.alert('Error', 'Authenticated admin session is required.');
+      return;
+    }
+
+    const todayStr = localDateString(new Date());
+    const openRecord = attendanceList.find(
+      (r) => r.date === todayStr && (r.status === 'present' || !r.checkOutTime)
+    );
+
+    if (openRecord) {
+      Alert.alert(
+        'Already Checked In',
+        `${selectedMember.fullName} is already checked in for today at ${formatTimeDisplay(openRecord.checkInTime)}.`
+      );
+      return;
+    }
+
+    try {
+      const now = new Date();
+      await saveAttendance(selectedMember.uid, {
+        date: todayStr,
+        checkInTime: now.toISOString(),
+        status: 'present',
+        verifiedBy: currentUser.uid,
+        createdAt: now.toISOString(),
+      });
+      Alert.alert('Success', `${selectedMember.fullName} checked in successfully.`);
+      await fetchMemberAttendance(selectedMember.uid);
+    } catch (error) {
+      console.error('Failed to record check-in', error);
+      Alert.alert('Error', 'Failed to record check-in.');
+    }
+  };
+
+  const handleCheckOut = async (record: AttendanceRecord) => {
+    if (!selectedMember) return;
+    try {
+      const now = new Date();
+      await updateAttendance(selectedMember.uid, record.id, {
+        checkOutTime: now.toISOString(),
+        status: 'completed',
+      });
+      Alert.alert('Success', `${selectedMember.fullName} checked out successfully.`);
+      await fetchMemberAttendance(selectedMember.uid);
+    } catch (error) {
+      console.error('Failed to record check-out', error);
+      Alert.alert('Error', 'Failed to record check-out.');
+    }
+  };
+
+  const handleDeleteAttendance = (record: AttendanceRecord) => {
+    if (!selectedMember) return;
+    Alert.alert(
+      'Delete Attendance Record',
+      `Are you sure you want to delete the attendance record for ${record.date} (${formatTimeDisplay(record.checkInTime)})?`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Delete',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              await deleteAttendance(selectedMember.uid, record.id);
+              Alert.alert('Success', 'Attendance record deleted.');
+              await fetchMemberAttendance(selectedMember.uid);
+            } catch (error) {
+              console.error('Failed to delete attendance record', error);
+              Alert.alert('Error', 'Failed to delete attendance record.');
+            }
+          },
+        },
+      ]
+    );
+  };
+
+  const openNewAttendanceModal = () => {
+    setEditingAttendanceRecord(null);
+    const now = new Date();
+    setAttDate(now);
+    setAttCheckInTime(now);
+    setAttCheckOutTime(null);
+    setAttHasCheckOut(false);
+    setAttStatus('present');
+    setManageAttendanceModalVisible(true);
+  };
+
+  const openEditAttendanceModal = (record: AttendanceRecord) => {
+    setEditingAttendanceRecord(record);
+    const recDate = record.date ? new Date(`${record.date}T00:00:00`) : new Date();
+    setAttDate(isNaN(recDate.getTime()) ? new Date() : recDate);
+    const checkIn = record.checkInTime ? new Date(record.checkInTime) : new Date();
+    setAttCheckInTime(isNaN(checkIn.getTime()) ? new Date() : checkIn);
+    if (record.checkOutTime) {
+      const checkOut = new Date(record.checkOutTime);
+      setAttCheckOutTime(isNaN(checkOut.getTime()) ? null : checkOut);
+      setAttHasCheckOut(true);
+    } else {
+      setAttCheckOutTime(null);
+      setAttHasCheckOut(false);
+    }
+    setAttStatus(record.status || 'present');
+    setManageAttendanceModalVisible(true);
+  };
+
+  const combineDateTime = (datePart: Date, timePart: Date): Date => {
+    const d = new Date(datePart);
+    d.setHours(timePart.getHours(), timePart.getMinutes(), timePart.getSeconds(), 0);
+    return d;
+  };
+
+  const handleSaveAttendanceForm = async () => {
+    if (!selectedMember) return;
+    const currentUser = auth.currentUser;
+    if (!currentUser) {
+      Alert.alert('Error', 'Authenticated admin session is required.');
+      return;
+    }
+
+    const checkInDateTime = combineDateTime(attDate, attCheckInTime);
+
+    if (attHasCheckOut && attCheckOutTime) {
+      const checkOutDateTime = combineDateTime(attDate, attCheckOutTime);
+      if (checkOutDateTime.getTime() <= checkInDateTime.getTime()) {
+        Alert.alert('Invalid Time', 'Check-out time must be after check-in time.');
+        return;
+      }
+    }
+
+    const dateStr = localDateString(attDate);
+    const checkInIso = checkInDateTime.toISOString();
+    const checkOutIso =
+      attHasCheckOut && attCheckOutTime
+        ? combineDateTime(attDate, attCheckOutTime).toISOString()
+        : undefined;
+
+    const effectiveStatus: 'present' | 'completed' =
+      attHasCheckOut && checkOutIso ? 'completed' : attStatus;
+
+    // Prevent duplicate open check-in on the selected date
+    const isRecordOpen = effectiveStatus === 'present' || !checkOutIso;
+    if (isRecordOpen) {
+      const existingOpenRecord = attendanceList.find(
+        (r) =>
+          (!editingAttendanceRecord || r.id !== editingAttendanceRecord.id) &&
+          r.date === dateStr &&
+          (r.status === 'present' || !r.checkOutTime)
+      );
+
+      if (existingOpenRecord) {
+        Alert.alert(
+          'Duplicate Open Check-In',
+          `${selectedMember.fullName} already has an open attendance record for ${dateStr} (Checked In: ${formatTimeDisplay(existingOpenRecord.checkInTime)}).`
+        );
+        return;
+      }
+    }
+
+    try {
+      if (editingAttendanceRecord) {
+        const updatePayload: Partial<Omit<AttendanceRecord, 'id'>> & { checkOutTime?: any } = {
+          date: dateStr,
+          checkInTime: checkInIso,
+          status: effectiveStatus,
+        };
+        if (checkOutIso) {
+          updatePayload.checkOutTime = checkOutIso;
+        } else {
+          updatePayload.checkOutTime = deleteField();
+        }
+        await updateAttendance(selectedMember.uid, editingAttendanceRecord.id, updatePayload);
+        Alert.alert('Success', 'Attendance record updated.');
+      } else {
+        await saveAttendance(selectedMember.uid, {
+          date: dateStr,
+          checkInTime: checkInIso,
+          checkOutTime: checkOutIso,
+          status: effectiveStatus,
+          verifiedBy: currentUser.uid,
+          createdAt: new Date().toISOString(),
+        });
+        Alert.alert('Success', 'Attendance record created.');
+      }
+      setManageAttendanceModalVisible(false);
+      await fetchMemberAttendance(selectedMember.uid);
+    } catch (error) {
+      console.error('Failed to save attendance', error);
+      Alert.alert('Error', 'Failed to save attendance record.');
+    }
+  };
 
   const fetchMembers = async () => {
     try {
@@ -424,6 +679,8 @@ export default function AdminMembersScreen() {
         onPress={() => {
           setSelectedMember(item);
           setRenewPlan(item.membership?.plan || 'Standard');
+          setAttendanceList([]);
+          fetchMemberAttendance(item.uid);
           setDetailModalVisible(true);
           setEditMode(false);
         }}
@@ -558,7 +815,11 @@ export default function AdminMembersScreen() {
           visible={detailModalVisible}
           animationType="slide"
           transparent
-          onRequestClose={() => setDetailModalVisible(false)}
+          onRequestClose={() => {
+            attendanceRequestIdRef.current += 1;
+            setDetailModalVisible(false);
+            setAttendanceList([]);
+          }}
         >
           <View style={styles.modalOverlay}>
             <View style={[styles.modalContent, { maxHeight: '90%' }]}>
@@ -566,7 +827,11 @@ export default function AdminMembersScreen() {
               <View style={styles.modalHeader}>
                 <TouchableOpacity
                   style={styles.closeModalButton}
-                  onPress={() => setDetailModalVisible(false)}
+                  onPress={() => {
+                    attendanceRequestIdRef.current += 1;
+                    setDetailModalVisible(false);
+                    setAttendanceList([]);
+                  }}
                 >
                   <Ionicons name="close-outline" size={26} color="black" />
                 </TouchableOpacity>
@@ -793,6 +1058,125 @@ export default function AdminMembersScreen() {
                       </View>
                     </View>
 
+                    {/* Attendance Section */}
+                    <View style={styles.attendanceSectionHeader}>
+                      <Text style={styles.subDetailSectionTitle}>ATTENDANCE</Text>
+                      <TouchableOpacity
+                        style={styles.manageAttendanceBtn}
+                        onPress={openNewAttendanceModal}
+                      >
+                        <Ionicons name="add-circle-outline" size={16} color="black" />
+                        <Text style={styles.manageAttendanceBtnText}>MANAGE ATTENDANCE</Text>
+                      </TouchableOpacity>
+                    </View>
+
+                    {/* Today's Attendance Card */}
+                    {(() => {
+                      const todayStr = localDateString(new Date());
+                      const todayAttendanceRecords = attendanceList.filter((r) => r.date === todayStr);
+                      const openTodayRecord = todayAttendanceRecords.find(
+                        (r) => r.status === 'present' || !r.checkOutTime
+                      );
+                      const completedTodayRecord = todayAttendanceRecords.find(
+                        (r) => r.status === 'completed' && r.checkOutTime
+                      );
+
+                      return (
+                        <View style={styles.attendanceTodayCard}>
+                          <View style={styles.attendanceTodayHeader}>
+                            <View style={{ flex: 1 }}>
+                              <Text style={styles.attendanceTodayLabel}>{`TODAY'S VISIT (${todayStr})`}</Text>
+                              {openTodayRecord ? (
+                                <Text style={styles.attendanceTodayStatus}>
+                                  Checked In • {formatTimeDisplay(openTodayRecord.checkInTime)}
+                                </Text>
+                              ) : completedTodayRecord ? (
+                                <Text style={styles.attendanceTodayStatus}>
+                                  Completed • {formatTimeDisplay(completedTodayRecord.checkInTime)} - {formatTimeDisplay(completedTodayRecord.checkOutTime)}
+                                </Text>
+                              ) : (
+                                <Text style={styles.attendanceTodayStatusMuted}>
+                                  No check-in recorded today
+                                </Text>
+                              )}
+                            </View>
+                            {openTodayRecord ? (
+                              <View style={[styles.statusPill, { backgroundColor: '#4CAF50' }]}>
+                                <Text style={styles.statusText}>CHECKED IN</Text>
+                              </View>
+                            ) : completedTodayRecord ? (
+                              <View style={[styles.statusPill, { backgroundColor: '#2196F3' }]}>
+                                <Text style={styles.statusText}>COMPLETED</Text>
+                              </View>
+                            ) : (
+                              <View style={[styles.statusPill, { backgroundColor: '#9E9E9E' }]}>
+                                <Text style={styles.statusText}>NOT LOGGED</Text>
+                              </View>
+                            )}
+                          </View>
+
+                          {/* Quick Action Button */}
+                          <View style={styles.attendanceTodayActions}>
+                            {openTodayRecord ? (
+                              <TouchableOpacity
+                                style={[styles.attendanceActionBtn, { backgroundColor: '#EF4444' }]}
+                                onPress={() => handleCheckOut(openTodayRecord)}
+                              >
+                                <Ionicons name="log-out-outline" size={18} color="white" />
+                                <Text style={styles.attendanceActionBtnText}>CHECK OUT</Text>
+                              </TouchableOpacity>
+                            ) : (
+                              <TouchableOpacity
+                                style={[styles.attendanceActionBtn, { backgroundColor: 'black' }]}
+                                onPress={handleCheckInNow}
+                              >
+                                <Ionicons name="log-in-outline" size={18} color="white" />
+                                <Text style={styles.attendanceActionBtnText}>CHECK IN NOW</Text>
+                              </TouchableOpacity>
+                            )}
+                          </View>
+                        </View>
+                      );
+                    })()}
+
+                    {/* Recent Attendance History */}
+                    <Text style={styles.attendanceHistoryTitle}>RECENT ATTENDANCE HISTORY</Text>
+                    {loadingAttendance ? (
+                      <ActivityIndicator size="small" color="black" style={{ marginVertical: 10 }} />
+                    ) : attendanceList.length === 0 ? (
+                      <View style={styles.emptyAttendanceBox}>
+                        <Text style={styles.emptyAttendanceText}>No attendance records</Text>
+                      </View>
+                    ) : (
+                      <View style={styles.attendanceHistoryList}>
+                        {attendanceList.slice(0, 5).map((rec) => (
+                          <View key={rec.id} style={styles.attendanceHistoryItem}>
+                            <View style={styles.attItemLeft}>
+                              <Text style={styles.attItemDate}>{rec.date}</Text>
+                              <Text style={styles.attItemTimes}>
+                                In: {formatTimeDisplay(rec.checkInTime)} • Out:{' '}
+                                {rec.checkOutTime ? formatTimeDisplay(rec.checkOutTime) : 'In progress'}
+                              </Text>
+                            </View>
+                            <View style={styles.attItemRight}>
+                              <TouchableOpacity
+                                style={styles.attIconBtn}
+                                onPress={() => openEditAttendanceModal(rec)}
+                              >
+                                <Ionicons name="pencil-outline" size={18} color="black" />
+                              </TouchableOpacity>
+                              <TouchableOpacity
+                                style={styles.attIconBtn}
+                                onPress={() => handleDeleteAttendance(rec)}
+                              >
+                                <Ionicons name="trash-outline" size={18} color="#EF4444" />
+                              </TouchableOpacity>
+                            </View>
+                          </View>
+                        ))}
+                      </View>
+                    )}
+
                     {/* Plan Renewal / Actions Area */}
                     {renewing ? (
                       <View style={styles.renewalArea}>
@@ -892,6 +1276,193 @@ export default function AdminMembersScreen() {
           </View>
         </Modal>
       )}
+
+      {/* Manage Attendance Modal (Create / Edit) */}
+      <Modal
+        visible={manageAttendanceModalVisible}
+        animationType="slide"
+        transparent
+        onRequestClose={() => setManageAttendanceModalVisible(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={[styles.modalContent, { maxHeight: '90%' }]}>
+            <View style={styles.modalHeader}>
+              <TouchableOpacity
+                style={styles.closeModalButton}
+                onPress={() => setManageAttendanceModalVisible(false)}
+              >
+                <Ionicons name="close-outline" size={26} color="black" />
+              </TouchableOpacity>
+              <Text style={styles.modalTitle}>
+                {editingAttendanceRecord ? 'EDIT ATTENDANCE' : 'MANAGE ATTENDANCE'}
+              </Text>
+              <TouchableOpacity
+                style={styles.editModalButton}
+                onPress={handleSaveAttendanceForm}
+              >
+                <Text style={styles.editModalButtonText}>SAVE</Text>
+              </TouchableOpacity>
+            </View>
+
+            <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 30 }}>
+              <View style={styles.modalForm}>
+                {/* Member Info Banner */}
+                {selectedMember && (
+                  <View style={styles.attMemberBanner}>
+                    <Text style={styles.attMemberBannerName}>{selectedMember.fullName}</Text>
+                    <Text style={styles.attMemberBannerMeta}>
+                      Plan: {selectedMember.membership?.plan || 'No Active Plan'}
+                    </Text>
+                  </View>
+                )}
+
+                {/* Date Selector */}
+                <Text style={styles.fieldLabel}>VISIT DATE *</Text>
+                <TouchableOpacity
+                  style={styles.datePickerSelector}
+                  onPress={() => setShowAttDatePicker(true)}
+                >
+                  <Text style={styles.datePickerText}>{localDateString(attDate)}</Text>
+                  <Ionicons name="calendar-outline" size={20} color="#666" />
+                </TouchableOpacity>
+
+                {showAttDatePicker && (
+                  <DateTimePicker
+                    value={attDate}
+                    mode="date"
+                    display="default"
+                    onChange={(_event, date) => {
+                      setShowAttDatePicker(false);
+                      if (date) setAttDate(date);
+                    }}
+                  />
+                )}
+
+                {/* Check-In Time */}
+                <Text style={styles.fieldLabel}>CHECK-IN TIME *</Text>
+                <TouchableOpacity
+                  style={styles.datePickerSelector}
+                  onPress={() => setShowAttCheckInPicker(true)}
+                >
+                  <Text style={styles.datePickerText}>
+                    {attCheckInTime.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                  </Text>
+                  <Ionicons name="time-outline" size={20} color="#666" />
+                </TouchableOpacity>
+
+                {showAttCheckInPicker && (
+                  <DateTimePicker
+                    value={attCheckInTime}
+                    mode="time"
+                    display="default"
+                    onChange={(_event, date) => {
+                      setShowAttCheckInPicker(false);
+                      if (date) setAttCheckInTime(date);
+                    }}
+                  />
+                )}
+
+                {/* Optional Check-Out Toggle */}
+                <View style={styles.attToggleRow}>
+                  <Text style={styles.fieldLabel}>RECORD CHECK-OUT TIME?</Text>
+                  <TouchableOpacity
+                    style={[
+                      styles.attToggleBtn,
+                      attHasCheckOut && styles.attToggleBtnActive,
+                    ]}
+                    onPress={() => {
+                      const next = !attHasCheckOut;
+                      setAttHasCheckOut(next);
+                      if (next && !attCheckOutTime) {
+                        setAttCheckOutTime(new Date());
+                      }
+                    }}
+                  >
+                    <Text
+                      style={[
+                        styles.attToggleBtnText,
+                        attHasCheckOut && styles.attToggleBtnTextActive,
+                      ]}
+                    >
+                      {attHasCheckOut ? 'YES' : 'NO'}
+                    </Text>
+                  </TouchableOpacity>
+                </View>
+
+                {attHasCheckOut && (
+                  <>
+                    <Text style={styles.fieldLabel}>CHECK-OUT TIME</Text>
+                    <TouchableOpacity
+                      style={styles.datePickerSelector}
+                      onPress={() => setShowAttCheckOutPicker(true)}
+                    >
+                      <Text style={styles.datePickerText}>
+                        {(attCheckOutTime || new Date()).toLocaleTimeString([], {
+                          hour: '2-digit',
+                          minute: '2-digit',
+                        })}
+                      </Text>
+                      <Ionicons name="time-outline" size={20} color="#666" />
+                    </TouchableOpacity>
+
+                    {showAttCheckOutPicker && (
+                      <DateTimePicker
+                        value={attCheckOutTime || new Date()}
+                        mode="time"
+                        display="default"
+                        onChange={(_event, date) => {
+                          setShowAttCheckOutPicker(false);
+                          if (date) setAttCheckOutTime(date);
+                        }}
+                      />
+                    )}
+                  </>
+                )}
+
+                {/* Status Selection */}
+                <Text style={styles.fieldLabel}>ATTENDANCE STATUS</Text>
+                <View style={styles.planSelectorRow}>
+                  {(['present', 'completed'] as const).map((st) => (
+                    <TouchableOpacity
+                      key={st}
+                      style={[
+                        styles.planPill,
+                        (attHasCheckOut ? 'completed' : attStatus) === st && styles.planPillSelected,
+                      ]}
+                      onPress={() => {
+                        setAttStatus(st);
+                        if (st === 'completed' && !attHasCheckOut) {
+                          setAttHasCheckOut(true);
+                          if (!attCheckOutTime) setAttCheckOutTime(new Date());
+                        }
+                      }}
+                    >
+                      <Text
+                        style={[
+                          styles.planPillText,
+                          (attHasCheckOut ? 'completed' : attStatus) === st && styles.planPillTextSelected,
+                        ]}
+                      >
+                        {st.toUpperCase()}
+                      </Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+
+                {/* Submit Action */}
+                <TouchableOpacity
+                  style={[styles.renewSubmitBtn, { marginTop: 24 }]}
+                  onPress={handleSaveAttendanceForm}
+                >
+                  <Text style={styles.renewSubmitBtnText}>
+                    {editingAttendanceRecord ? 'UPDATE RECORD' : 'SAVE ATTENDANCE'}
+                  </Text>
+                </TouchableOpacity>
+              </View>
+            </ScrollView>
+          </View>
+        </View>
+      </Modal>
 
       {/* Add New Member Modal */}
       <Modal
@@ -1663,6 +2234,182 @@ const styles = StyleSheet.create({
   renewSubmitBtnText: {
     fontFamily: 'Oswald_700Bold',
     fontSize: 12,
+    color: 'white',
+  },
+  attendanceSectionHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginTop: 16,
+    marginBottom: 8,
+  },
+  manageAttendanceBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 6,
+    borderWidth: 1,
+    borderColor: 'black',
+    backgroundColor: '#FFF',
+  },
+  manageAttendanceBtnText: {
+    fontFamily: 'Oswald_700Bold',
+    fontSize: 10,
+    color: 'black',
+    marginLeft: 4,
+    letterSpacing: 0.5,
+  },
+  attendanceTodayCard: {
+    backgroundColor: '#F9F9F9',
+    borderRadius: 14,
+    padding: 14,
+    borderWidth: 1.5,
+    borderColor: '#EAEAEA',
+    marginBottom: 10,
+  },
+  attendanceTodayHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+  },
+  attendanceTodayLabel: {
+    fontFamily: 'Oswald_700Bold',
+    fontSize: 9,
+    color: '#999',
+    letterSpacing: 0.5,
+  },
+  attendanceTodayStatus: {
+    fontFamily: 'Oswald_600SemiBold',
+    fontSize: 14,
+    color: 'black',
+    marginTop: 2,
+  },
+  attendanceTodayStatusMuted: {
+    fontFamily: 'Oswald_400Regular',
+    fontSize: 13,
+    color: '#777',
+    marginTop: 2,
+  },
+  attendanceTodayActions: {
+    marginTop: 12,
+  },
+  attendanceActionBtn: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    alignItems: 'center',
+    height: 40,
+    borderRadius: 8,
+  },
+  attendanceActionBtnText: {
+    fontFamily: 'Oswald_700Bold',
+    fontSize: 12,
+    color: 'white',
+    marginLeft: 6,
+    letterSpacing: 1,
+  },
+  attendanceHistoryTitle: {
+    fontFamily: 'Oswald_700Bold',
+    fontSize: 10,
+    letterSpacing: 1,
+    color: '#999',
+    marginTop: 10,
+    marginBottom: 6,
+  },
+  emptyAttendanceBox: {
+    paddingVertical: 12,
+    alignItems: 'center',
+    backgroundColor: '#FFF',
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: '#EAEAEA',
+  },
+  emptyAttendanceText: {
+    fontFamily: 'Oswald_400Regular',
+    fontSize: 13,
+    color: '#999',
+  },
+  attendanceHistoryList: {
+    backgroundColor: '#FFF',
+    borderRadius: 12,
+    borderWidth: 1.5,
+    borderColor: '#EAEAEA',
+    overflow: 'hidden',
+  },
+  attendanceHistoryItem: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: '#F0F0F0',
+  },
+  attItemLeft: {
+    flex: 1,
+  },
+  attItemDate: {
+    fontFamily: 'Oswald_700Bold',
+    fontSize: 13,
+    color: 'black',
+  },
+  attItemTimes: {
+    fontFamily: 'Oswald_400Regular',
+    fontSize: 12,
+    color: '#666',
+    marginTop: 1,
+  },
+  attItemRight: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  attIconBtn: {
+    padding: 6,
+    marginLeft: 4,
+  },
+  attMemberBanner: {
+    backgroundColor: '#F5F5F5',
+    borderRadius: 10,
+    padding: 10,
+    marginBottom: 14,
+    borderWidth: 1,
+    borderColor: '#E0E0E0',
+  },
+  attMemberBannerName: {
+    fontFamily: 'Oswald_700Bold',
+    fontSize: 15,
+    color: 'black',
+  },
+  attMemberBannerMeta: {
+    fontFamily: 'Oswald_400Regular',
+    fontSize: 12,
+    color: '#666',
+    marginTop: 2,
+  },
+  attToggleRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginVertical: 8,
+  },
+  attToggleBtn: {
+    paddingHorizontal: 16,
+    paddingVertical: 6,
+    borderRadius: 8,
+    borderWidth: 1.5,
+    borderColor: '#999',
+    backgroundColor: '#FFF',
+  },
+  attToggleBtnActive: {
+    borderColor: 'black',
+    backgroundColor: 'black',
+  },
+  attToggleBtnText: {
+    fontFamily: 'Oswald_700Bold',
+    fontSize: 11,
+    color: '#666',
+  },
+  attToggleBtnTextActive: {
     color: 'white',
   },
 });
