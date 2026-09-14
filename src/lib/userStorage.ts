@@ -66,6 +66,46 @@ export const getProfile = async (uid: string): Promise<UserProfile | null> => {
   return local;
 };
 
+// Fetch profile directly from Firestore to ensure fresh/authoritative role verification
+export const fetchUserProfile = async (uid: string): Promise<UserProfile | null> => {
+  try {
+    const userDoc = await getDoc(doc(db, 'users', uid));
+    if (userDoc.exists()) {
+      const remoteData = userDoc.data() as UserProfile;
+      await AsyncStorage.setItem(profileKey(uid), JSON.stringify(remoteData));
+      return remoteData;
+    }
+    return null;
+  } catch (error) {
+    console.warn('Direct Firestore profile fetch failed:', error);
+    return null;
+  }
+};
+
+// Authoritative role & route resolution with fail-closed behavior for admin access
+export const resolveUserRoute = async (uid: string): Promise<'AdminMain' | 'Main' | 'Detail'> => {
+  try {
+    const userDoc = await getDoc(doc(db, 'users', uid));
+    if (userDoc.exists()) {
+      const remoteData = userDoc.data() as UserProfile;
+      await AsyncStorage.setItem(profileKey(uid), JSON.stringify(remoteData));
+      if (remoteData.role === 'owner' || remoteData.role === 'admin') {
+        return 'AdminMain';
+      }
+      return 'Main';
+    }
+    return 'Detail';
+  } catch (error) {
+    console.warn('Failed to verify user role from Firestore (failing closed for admin):', error);
+    // Fail-closed: do NOT open AdminMain if Firestore is unreachable or unverified
+    const local = await readJson<UserProfile>(profileKey(uid));
+    if (local) {
+      return 'Main';
+    }
+    return 'Detail';
+  }
+};
+
 export const saveProfile = async (uid: string, profile: UserProfile) => {
   // Save local
   await AsyncStorage.setItem(profileKey(uid), JSON.stringify(profile));

@@ -19,7 +19,7 @@ import DateTimePicker from '@react-native-community/datetimepicker';
 import * as ImagePicker from 'expo-image-picker';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { auth } from '../../FirebaseConfig';
-import { localDateString, saveProfile, saveProfileImage, saveMembership, getProfile, getMembership } from '../../lib/userStorage';
+import { localDateString, saveProfile, saveProfileImage, saveMembership, getProfile, getMembership, type UserProfile } from '../../lib/userStorage';
 import type { RootStackParamList } from '../../types/navigation';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Detail'>;
@@ -79,13 +79,14 @@ export default function DetailScreen({ navigation }: Props) {
       return;
     }
 
-    const profile = {
+    const profile: UserProfile = {
       fullName: fullName.trim(),
       phoneNumber: phoneNumber.trim(),
       dateOfBirth: dateOfBirth.trim(),
       address: address.trim(),
       age: age.trim(),
       gender: gender,
+      role: 'member',
     };
 
     const uid = auth.currentUser?.uid;

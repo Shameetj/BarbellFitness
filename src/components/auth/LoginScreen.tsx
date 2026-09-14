@@ -10,7 +10,7 @@ import { Ionicons } from '@expo/vector-icons';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import type { RootStackParamList } from '../../types/navigation';
 import { GoogleSignin } from '@react-native-google-signin/google-signin';
-import { getProfile, saveProfile } from '../../lib/userStorage';
+import { resolveUserRoute } from '../../lib/userStorage';
 
 GoogleSignin.configure({
   webClientId: process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID || '552125531713-ii8l769urh188qhhdqv14hsjklqk0bje.apps.googleusercontent.com',
@@ -36,25 +36,9 @@ export default function LoginScreen({ navigation }: Props) {
       if (!idToken) { setError('Google did not return an ID token.'); return; }
       const credential = GoogleAuthProvider.credential(idToken);
       await signInWithCredential(auth, credential);
-      const email = auth.currentUser!.email || '';
-      const isOwner = email.toLowerCase().includes('admin') || email.toLowerCase().includes('owner');
-      
-      if (isOwner) {
-        const profile = await getProfile(auth.currentUser!.uid);
-        const updatedProfile = {
-          fullName: profile?.fullName || email.split('@')[0].toUpperCase(),
-          phoneNumber: profile?.phoneNumber || '-',
-          dateOfBirth: profile?.dateOfBirth || '-',
-          address: profile?.address || '-',
-          email,
-          role: 'owner' as const,
-        };
-        await saveProfile(auth.currentUser!.uid, updatedProfile);
-        navigation.reset({ index: 0, routes: [{ name: 'AdminMain' }] });
-      } else {
-        const profile = await getProfile(auth.currentUser!.uid);
-        navigation.reset({ index: 0, routes: [{ name: profile ? 'Main' : 'Detail' }] });
-      }
+      const uid = auth.currentUser!.uid;
+      const targetRoute = await resolveUserRoute(uid);
+      navigation.reset({ index: 0, routes: [{ name: targetRoute }] });
     } catch (err: any) {
       console.error('Google Sign-In error:', err);
       setError('Google sign-in failed. Try again.');
@@ -74,27 +58,9 @@ export default function LoginScreen({ navigation }: Props) {
     setLoading(true);
     try {
       await signInWithEmailAndPassword(auth, email.trim(), password);
-      
-      const userEmail = email.trim();
-      const isOwner = userEmail.toLowerCase().includes('admin') || userEmail.toLowerCase().includes('owner');
       const uid = auth.currentUser!.uid;
-      
-      if (isOwner) {
-        const profile = await getProfile(uid);
-        const updatedProfile = {
-          fullName: profile?.fullName || userEmail.split('@')[0].toUpperCase(),
-          phoneNumber: profile?.phoneNumber || '-',
-          dateOfBirth: profile?.dateOfBirth || '-',
-          address: profile?.address || '-',
-          email: userEmail,
-          role: 'owner' as const,
-        };
-        await saveProfile(uid, updatedProfile);
-        navigation.reset({ index: 0, routes: [{ name: 'AdminMain' }] });
-      } else {
-        const profile = await getProfile(uid);
-        navigation.reset({ index: 0, routes: [{ name: profile ? 'Main' : 'Detail' }] });
-      }
+      const targetRoute = await resolveUserRoute(uid);
+      navigation.reset({ index: 0, routes: [{ name: targetRoute }] });
     } catch (err: any) {
       const code = err.code ?? err.message ?? '';
       console.error('Login error:', err);

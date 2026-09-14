@@ -17,7 +17,7 @@ import MainScreen from '../components/main/MainScreen';
 import AdminMainScreen from '../components/main/AdminMainScreen';
 import { onAuthStateChanged } from 'firebase/auth';
 import { auth } from '../FirebaseConfig';
-import { getProfile, saveProfile } from '../lib/userStorage';
+import { resolveUserRoute } from '../lib/userStorage';
 import type { RootStackParamList } from '../types/navigation';
 
 
@@ -39,25 +39,8 @@ export default function App() {
         return;
       }
       try {
-        const email = user.email || '';
-        const isOwner = email.toLowerCase().includes('admin') || email.toLowerCase().includes('owner');
-        
-        if (isOwner) {
-          const profile = await getProfile(user.uid);
-          const updatedProfile = {
-            fullName: profile?.fullName || email.split('@')[0].toUpperCase(),
-            phoneNumber: profile?.phoneNumber || '-',
-            dateOfBirth: profile?.dateOfBirth || '-',
-            address: profile?.address || '-',
-            email,
-            role: 'owner' as const,
-          };
-          await saveProfile(user.uid, updatedProfile);
-          setInitialRoute('AdminMain');
-        } else {
-          const profile = await getProfile(user.uid);
-          setInitialRoute(profile ? 'Main' : 'Detail');
-        }
+        const route = await resolveUserRoute(user.uid);
+        setInitialRoute(route);
       } catch (err) {
         console.error('Failed to verify profile', err);
         setInitialRoute('Detail');

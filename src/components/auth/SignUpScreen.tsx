@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useState } from 'react';
 import {
   StyleSheet, Text, TextInput, TouchableOpacity, View, Image, ActivityIndicator
 } from 'react-native';
@@ -7,11 +7,10 @@ import { Oswald_400Regular, Oswald_600SemiBold, Oswald_700Bold } from '@expo-goo
 import { createUserWithEmailAndPassword, updateProfile, signInWithCredential, GoogleAuthProvider } from 'firebase/auth';
 import { auth } from '../../FirebaseConfig';
 import { GoogleSignin } from '@react-native-google-signin/google-signin';
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import type { RootStackParamList } from '../../types/navigation';
 
-import { getProfile, saveProfile } from '../../lib/userStorage';
+import { resolveUserRoute } from '../../lib/userStorage';
 
 GoogleSignin.configure({
   webClientId: process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID || '552125531713-ii8l769urh188qhhdqv14hsjklqk0bje.apps.googleusercontent.com',
@@ -38,25 +37,9 @@ export default function SignUpScreen({ navigation }: Props) {
       if (!idToken) { setError('Google did not return an ID token.'); return; }
       const credential = GoogleAuthProvider.credential(idToken);
       await signInWithCredential(auth, credential);
-      const userEmail = auth.currentUser!.email || '';
-      const isOwner = userEmail.toLowerCase().includes('admin') || userEmail.toLowerCase().includes('owner');
-      
-      if (isOwner) {
-        const profile = await getProfile(auth.currentUser!.uid);
-        const updatedProfile = {
-          fullName: profile?.fullName || userEmail.split('@')[0].toUpperCase(),
-          phoneNumber: profile?.phoneNumber || '-',
-          dateOfBirth: profile?.dateOfBirth || '-',
-          address: profile?.address || '-',
-          email: userEmail,
-          role: 'owner' as const,
-        };
-        await saveProfile(auth.currentUser!.uid, updatedProfile);
-        navigation.replace('AdminMain');
-      } else {
-        const profile = await getProfile(auth.currentUser!.uid);
-        navigation.replace(profile ? 'Main' : 'Detail');
-      }
+      const uid = auth.currentUser!.uid;
+      const targetRoute = await resolveUserRoute(uid);
+      navigation.replace(targetRoute);
     } catch (err: any) {
       console.error('Google Sign-In error:', err);
       setError('Google sign-in failed. Try again.');
@@ -80,23 +63,7 @@ export default function SignUpScreen({ navigation }: Props) {
       if (userCredential.user && username.trim()) {
         await updateProfile(userCredential.user, { displayName: username.trim() });
       }
-      
-      const userEmail = email.trim();
-      const isOwner = userEmail.toLowerCase().includes('admin') || userEmail.toLowerCase().includes('owner');
-      if (isOwner && userCredential.user) {
-        const updatedProfile = {
-          fullName: username.trim(),
-          phoneNumber: '-',
-          dateOfBirth: '-',
-          address: '-',
-          email: userEmail,
-          role: 'owner' as const,
-        };
-        await saveProfile(userCredential.user.uid, updatedProfile);
-        navigation.replace('AdminMain');
-      } else {
-        navigation.replace('Detail');
-      }
+      navigation.replace('Detail');
     } catch (err: any) {
       const code = err.code ?? err.message ?? '';
       if (code.includes('auth/email-already-in-use')) setError('This email is already in use.');
