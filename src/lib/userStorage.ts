@@ -82,7 +82,7 @@ export const fetchUserProfile = async (uid: string): Promise<UserProfile | null>
   }
 };
 
-// Authoritative role & route resolution with fail-closed behavior for admin access
+// Authoritative role & route resolution with strict fail-closed behavior
 export const resolveUserRoute = async (uid: string): Promise<'AdminMain' | 'Main' | 'Detail'> => {
   try {
     const userDoc = await getDoc(doc(db, 'users', uid));
@@ -96,12 +96,8 @@ export const resolveUserRoute = async (uid: string): Promise<'AdminMain' | 'Main
     }
     return 'Detail';
   } catch (error) {
-    console.warn('Failed to verify user role from Firestore (failing closed for admin):', error);
-    // Fail-closed: do NOT open AdminMain if Firestore is unreachable or unverified
-    const local = await readJson<UserProfile>(profileKey(uid));
-    if (local) {
-      return 'Main';
-    }
+    console.warn('Authoritative Firestore profile verification failed (defaulting to Detail):', error);
+    // Strict fail-closed: do NOT use local cache to authorize routes or grant access
     return 'Detail';
   }
 };

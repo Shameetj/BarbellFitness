@@ -132,13 +132,14 @@ export default function DetailScreen({ navigation }: Props) {
         return;
       }
 
-      const profile = {
+      const profile: UserProfile = {
         fullName: fullName.trim(),
         phoneNumber: phoneNumber.trim(),
         dateOfBirth: dateOfBirth.trim(),
         address: address.trim(),
         age: age.trim(),
         gender: gender,
+        role: 'member',
       };
 
       await saveProfile(uid, profile);
