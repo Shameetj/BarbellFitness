@@ -143,8 +143,33 @@ export const saveMembership = async (uid: string, membership: Membership): Promi
   }
 };
 
-export const getPrs = (uid: string) => readJson<Record<string, string>>(prsKey(uid));
-export const savePrs = (uid: string, prs: Record<string, string>) => AsyncStorage.setItem(prsKey(uid), JSON.stringify(prs));
+// Fetch personal records directly from Firestore subcollection: /users/{uid}/prs/current
+export const getPrs = async (uid: string): Promise<Record<string, string> | null> => {
+  try {
+    const prDoc = await getDoc(doc(db, 'users', uid, 'prs', 'current'));
+    if (prDoc.exists()) {
+      const remoteData = prDoc.data() as Record<string, string>;
+      await AsyncStorage.setItem(prsKey(uid), JSON.stringify(remoteData));
+      return remoteData;
+    }
+    return null;
+  } catch (error) {
+    console.error(`Failed to fetch PRs from Firestore for user ${uid}:`, error);
+    return null;
+  }
+};
+
+// Write personal records directly to Firestore subcollection: /users/{uid}/prs/current
+export const savePrs = async (uid: string, prs: Record<string, string>): Promise<void> => {
+  try {
+    await setDoc(doc(db, 'users', uid, 'prs', 'current'), prs);
+    await AsyncStorage.setItem(prsKey(uid), JSON.stringify(prs));
+  } catch (error) {
+    console.error(`Failed to save PRs to Firestore for user ${uid}:`, error);
+    throw error;
+  }
+};
+
 export const getProfileImage = (uid: string) => AsyncStorage.getItem(imageKey(uid));
 export const saveProfileImage = async (uid: string, sourceUri: string) => { if (!FileSystem.documentDirectory) throw new Error('App documents directory is unavailable.'); const extension = sourceUri.split('.').pop()?.split('?')[0] || 'jpg'; const destination = `${FileSystem.documentDirectory}profile-${uid}.${extension}`; await FileSystem.copyAsync({ from: sourceUri, to: destination }); await AsyncStorage.setItem(imageKey(uid), destination); return destination; };
 
@@ -201,6 +226,7 @@ export const deleteMember = async (uid: string): Promise<void> => {
     const batch = writeBatch(db);
     batch.delete(doc(db, 'users', uid));
     batch.delete(doc(db, 'users', uid, 'membership', 'current'));
+    batch.delete(doc(db, 'users', uid, 'prs', 'current'));
     await batch.commit();
   } catch (error) {
     console.error('Firestore member delete failed:', error);
