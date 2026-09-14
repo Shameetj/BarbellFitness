@@ -74,6 +74,9 @@ export default function AdminMembersScreen() {
   const [editMode, setEditMode] = useState(false);
   const [confirmApproveModalVisible, setConfirmApproveModalVisible] = useState(false);
   const [requestToApprove, setRequestToApprove] = useState<MembershipRequest | null>(null);
+  const [confirmDeleteModalVisible, setConfirmDeleteModalVisible] = useState(false);
+  const [memberToDelete, setMemberToDelete] = useState<AdminMember | null>(null);
+  const [isDeletingMember, setIsDeletingMember] = useState(false);
 
   // Attendance state & request guard
   const [attendanceList, setAttendanceList] = useState<AttendanceRecord[]>([]);
@@ -637,29 +640,32 @@ export default function AdminMembersScreen() {
     }
   };
 
-  const handleDeleteMember = async (member: AdminMember) => {
-    Alert.alert(
-      'Delete Member',
-      `Are you sure you want to permanently delete ${member.fullName} from the registry?`,
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Delete',
-          style: 'destructive',
-          onPress: async () => {
-            try {
-              await deleteMember(member.uid);
-              setDetailModalVisible(false);
-              fetchMembers();
-              Alert.alert('Deleted', 'Member has been deleted.');
-            } catch (e) {
-              console.error(e);
-              Alert.alert('Error', 'Failed to delete member.');
-            }
-          },
-        },
-      ]
-    );
+  const handleDeleteMember = (member: AdminMember) => {
+    if (member.uid === auth.currentUser?.uid) {
+      Alert.alert('Action Prohibited', 'You cannot delete your own admin account.');
+      return;
+    }
+    setMemberToDelete(member);
+    setConfirmDeleteModalVisible(true);
+  };
+
+  const handleConfirmDelete = async () => {
+    if (!memberToDelete) return;
+    const member = memberToDelete;
+    setIsDeletingMember(true);
+    try {
+      await deleteMember(member.uid);
+      setConfirmDeleteModalVisible(false);
+      setMemberToDelete(null);
+      setDetailModalVisible(false);
+      await fetchMembers();
+      Alert.alert('Deleted', `Member ${member.fullName} and all records have been purged from the database.`);
+    } catch (e: any) {
+      console.error('Failed to delete member:', e);
+      Alert.alert('Error', e?.message || 'Failed to delete member data.');
+    } finally {
+      setIsDeletingMember(false);
+    }
   };
 
   const startEditMode = (member: AdminMember) => {
@@ -1976,6 +1982,79 @@ export default function AdminMembersScreen() {
                   <ActivityIndicator color="white" size="small" />
                 ) : (
                   <Text style={styles.confirmApproveBtnText}>APPROVE & ACTIVATE</Text>
+                )}
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      {/* Member Deletion Confirmation Modal */}
+      <Modal
+        visible={confirmDeleteModalVisible && !!memberToDelete}
+        animationType="fade"
+        transparent
+        onRequestClose={() => {
+          if (!isDeletingMember) {
+            setConfirmDeleteModalVisible(false);
+            setMemberToDelete(null);
+          }
+        }}
+      >
+        <View style={styles.confirmModalOverlay}>
+          <View style={styles.confirmModalCard}>
+            <Text style={[styles.confirmModalTitle, { color: '#E53935' }]}>DELETE MEMBER</Text>
+
+            {memberToDelete && (
+              <View style={styles.confirmModalMetaBox}>
+                <View style={styles.confirmModalRow}>
+                  <Text style={styles.confirmModalLabel}>MEMBER NAME</Text>
+                  <Text style={styles.confirmModalValue}>{memberToDelete.fullName}</Text>
+                </View>
+                <View style={styles.confirmModalRow}>
+                  <Text style={styles.confirmModalLabel}>PHONE NUMBER</Text>
+                  <Text style={styles.confirmModalValue}>{memberToDelete.phoneNumber || 'N/A'}</Text>
+                </View>
+                <View style={[styles.confirmModalRow, { marginBottom: 0 }]}>
+                  <Text style={styles.confirmModalLabel}>ACTIVE PLAN</Text>
+                  <Text style={styles.confirmModalValue}>
+                    {memberToDelete.membership?.plan ? `${memberToDelete.membership.plan.toUpperCase()} PLAN` : 'NO ACTIVE PLAN'}
+                  </Text>
+                </View>
+              </View>
+            )}
+
+            <Text style={styles.confirmModalBody}>
+              Are you sure you want to permanently delete this member? All profile info, workouts, attendance records, and membership requests will be permanently deleted from the database.
+            </Text>
+
+            <View style={styles.confirmModalActions}>
+              <TouchableOpacity
+                style={styles.confirmCancelBtn}
+                onPress={() => {
+                  setConfirmDeleteModalVisible(false);
+                  setMemberToDelete(null);
+                }}
+                disabled={isDeletingMember}
+                activeOpacity={0.7}
+              >
+                <Text style={styles.confirmCancelBtnText}>CANCEL</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={[
+                  styles.confirmApproveBtn,
+                  { backgroundColor: '#E53935' },
+                  isDeletingMember && styles.disabledButton,
+                ]}
+                onPress={handleConfirmDelete}
+                disabled={isDeletingMember}
+                activeOpacity={0.8}
+              >
+                {isDeletingMember ? (
+                  <ActivityIndicator color="white" size="small" />
+                ) : (
+                  <Text style={styles.confirmApproveBtnText}>DELETE MEMBER</Text>
                 )}
               </TouchableOpacity>
             </View>

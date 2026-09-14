@@ -520,20 +520,62 @@ export const getAllMembers = async (): Promise<AdminMember[]> => {
   }
 };
 
-// Delete/Remove member (Firestore first, clean up local cache only on success)
+// Delete/Remove member (Complete Firestore data purge across all subcollections & requests)
 export const deleteMember = async (uid: string): Promise<void> => {
   try {
-    const batch = writeBatch(db);
-    batch.delete(doc(db, 'users', uid));
-    batch.delete(doc(db, 'users', uid, 'membership', 'current'));
-    batch.delete(doc(db, 'users', uid, 'prs', 'current'));
-    await batch.commit();
+    // 1. Fetch all documents across all member subcollections & related collections
+    const [attendanceSnap, workoutsSnap, membershipSnap, prsSnap, requestsSnap] = await Promise.all([
+      getDocs(collection(db, 'users', uid, 'attendance')),
+      getDocs(collection(db, 'users', uid, 'workouts')),
+      getDocs(collection(db, 'users', uid, 'membership')),
+      getDocs(collection(db, 'users', uid, 'prs')),
+      getDocs(query(collection(db, 'membershipRequests'), where('userId', '==', uid))),
+    ]);
+
+    // 2. Collect all document references to delete
+    const docRefsToDelete = [
+      doc(db, 'users', uid),
+      ...attendanceSnap.docs.map((d) => d.ref),
+      ...workoutsSnap.docs.map((d) => d.ref),
+      ...membershipSnap.docs.map((d) => d.ref),
+      ...prsSnap.docs.map((d) => d.ref),
+      ...requestsSnap.docs.map((d) => d.ref),
+    ];
+
+    // 3. Commit deletions in chunks (handling Firestore 500-operation batch limits safely)
+    const BATCH_SIZE = 400;
+    for (let i = 0; i < docRefsToDelete.length; i += BATCH_SIZE) {
+      const chunk = docRefsToDelete.slice(i, i + BATCH_SIZE);
+      const batch = writeBatch(db);
+      chunk.forEach((ref) => batch.delete(ref));
+      await batch.commit();
+    }
   } catch (error) {
-    console.error('Firestore member delete failed:', error);
+    console.error('Firestore complete member delete failed:', error);
     throw error;
   }
 
-  const keys = [profileKey(uid), membershipKey(uid), imageKey(uid), prsKey(uid)];
+  // 4. Clean up local filesystem profile image if it exists
+  try {
+    const cachedImagePath = await AsyncStorage.getItem(imageKey(uid));
+    if (cachedImagePath) {
+      const fileInfo = await FileSystem.getInfoAsync(cachedImagePath);
+      if (fileInfo.exists) {
+        await FileSystem.deleteAsync(cachedImagePath, { idempotent: true });
+      }
+    }
+  } catch (fsError) {
+    console.warn('Local profile image cleanup failed (continuing):', fsError);
+  }
+
+  // 5. Clean up local AsyncStorage keys
+  const keys = [
+    profileKey(uid),
+    membershipKey(uid),
+    imageKey(uid),
+    prsKey(uid),
+    activeWorkoutKey(uid),
+  ];
   await AsyncStorage.multiRemove(keys);
 };
 
