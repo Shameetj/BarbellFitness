@@ -4,7 +4,14 @@ import {
 } from 'react-native';
 import { useFonts, BebasNeue_400Regular } from '@expo-google-fonts/bebas-neue';
 import { Oswald_400Regular, Oswald_600SemiBold, Oswald_700Bold } from '@expo-google-fonts/oswald';
-import { createUserWithEmailAndPassword, updateProfile, signInWithCredential, GoogleAuthProvider } from 'firebase/auth';
+import {
+  createUserWithEmailAndPassword,
+  updateProfile,
+  signInWithCredential,
+  GoogleAuthProvider,
+  sendEmailVerification,
+  signOut,
+} from 'firebase/auth';
 import { auth } from '../../FirebaseConfig';
 import { GoogleSignin } from '@react-native-google-signin/google-signin';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
@@ -25,6 +32,7 @@ export default function SignUpScreen({ navigation }: Props) {
   const [confirmPassword, setConfirmPassword] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [verificationSent, setVerificationSent] = useState(false);
 
   const handleGoogleSignIn = async () => {
     if (loading) return;
@@ -56,26 +64,83 @@ export default function SignUpScreen({ navigation }: Props) {
     if (!username.trim()) { setError('Please enter a username.'); return; }
     if (!email.trim()) { setError('Please enter an email.'); return; }
     if (!password) { setError('Please enter a password.'); return; }
+    if (password.length < 6) { setError('Password must be at least 6 characters.'); return; }
     if (password !== confirmPassword) { setError('Passwords do not match.'); return; }
 
     setLoading(true);
     try {
       const userCredential = await createUserWithEmailAndPassword(auth, email.trim(), password);
       if (userCredential.user && username.trim()) {
-        await updateProfile(userCredential.user, { displayName: username.trim() });
+        try {
+          await updateProfile(userCredential.user, { displayName: username.trim() });
+        } catch (profileErr) {
+          console.warn('Failed to update displayName:', profileErr);
+        }
       }
-      console.log(`[NAV] SignUpScreen -> successful sign up for ${userCredential.user.uid}, resetting navigation to Detail`);
-      navigation.reset({ index: 0, routes: [{ name: 'Detail' }] });
+
+      let emailSent = false;
+      try {
+        await sendEmailVerification(userCredential.user);
+        emailSent = true;
+      } catch (verificationErr) {
+        console.error('Failed to send verification email:', verificationErr);
+      }
+
+      // Immediately sign out unverified user so they do not enter the app
+      await signOut(auth);
+
+      if (emailSent) {
+        setVerificationSent(true);
+      } else {
+        setError('Account created, but we could not send the verification email. Please log in to request a verification link.');
+      }
     } catch (err: any) {
       const code = err.code ?? err.message ?? '';
-      if (code.includes('auth/email-already-in-use')) setError('This email is already in use.');
-      else if (code.includes('auth/invalid-email')) setError('Invalid email address.');
-      else if (code.includes('auth/weak-password')) setError('Password is too weak (min 6 characters).');
-      else setError('Failed to create account. Try again.');
+      console.error('SignUp error:', err);
+      if (code.includes('auth/email-already-in-use')) {
+        setError('This email is already registered. Please log in.');
+      } else if (code.includes('auth/invalid-email')) {
+        setError('Invalid email address format.');
+      } else if (code.includes('auth/weak-password')) {
+        setError('Password is too weak (min 6 characters).');
+      } else if (code.includes('auth/too-many-requests')) {
+        setError('Too many attempts. Please try again later.');
+      } else {
+        setError('Failed to create account. Please try again.');
+      }
     } finally {
       setLoading(false);
     }
   };
+
+  if (verificationSent) {
+    return (
+      <View style={styles.container}>
+        <View style={styles.borderBox}>
+          <Text style={styles.heading}>VERIFY YOUR{"\n"}EMAIL</Text>
+
+          <View style={styles.verificationCard}>
+            <Text style={styles.verificationCardTitle}>VERIFICATION LINK SENT</Text>
+            <Text style={styles.verificationCardBody}>
+              A verification email has been sent to:
+            </Text>
+            <Text style={styles.verificationEmailHighlight}>{email.trim()}</Text>
+            <Text style={styles.verificationCardNote}>
+              Please check your inbox (and spam folder) and verify your email address before logging in.
+            </Text>
+          </View>
+
+          <TouchableOpacity
+            style={styles.loginBox}
+            onPress={() => navigation.navigate('Login')}
+            activeOpacity={0.8}
+          >
+            <Text style={styles.buttonText}>GO TO LOGIN</Text>
+          </TouchableOpacity>
+        </View>
+      </View>
+    );
+  }
 
   return (
     <View style={styles.container}>
@@ -115,7 +180,7 @@ export default function SignUpScreen({ navigation }: Props) {
         </View>
 
         {error ? (
-          <Text style={{ color: 'red', textAlign: 'center', marginVertical: 8 }}>{error}</Text>
+          <Text style={{ color: 'red', textAlign: 'center', marginVertical: 8, paddingHorizontal: 16 }}>{error}</Text>
         ) : null}
 
         <TouchableOpacity style={styles.loginBox} onPress={handleSignUp} disabled={loading}>
@@ -273,5 +338,47 @@ const styles = StyleSheet.create({
     marginTop: 10,
     marginHorizontal: 16,
     borderRadius: 2,
+  },
+  verificationCard: {
+    width: 340,
+    backgroundColor: 'black',
+    borderRadius: 16,
+    padding: 24,
+    alignSelf: 'center',
+    marginTop: 20,
+    marginBottom: 20,
+    borderWidth: 3,
+    borderColor: 'black',
+  },
+  verificationCardTitle: {
+    fontFamily: 'BebasNeue_400Regular',
+    fontSize: 22,
+    color: '#4ADE80',
+    letterSpacing: 2,
+    textAlign: 'center',
+    marginBottom: 12,
+  },
+  verificationCardBody: {
+    fontFamily: 'Oswald_400Regular',
+    fontSize: 14,
+    color: '#E5E7EB',
+    textAlign: 'center',
+    marginBottom: 6,
+    lineHeight: 20,
+  },
+  verificationEmailHighlight: {
+    fontFamily: 'Oswald_600SemiBold',
+    fontSize: 16,
+    color: 'white',
+    textAlign: 'center',
+    marginBottom: 12,
+    letterSpacing: 1,
+  },
+  verificationCardNote: {
+    fontFamily: 'Oswald_400Regular',
+    fontSize: 13,
+    color: '#9CA3AF',
+    textAlign: 'center',
+    lineHeight: 18,
   },
 });

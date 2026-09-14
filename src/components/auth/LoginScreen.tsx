@@ -4,7 +4,13 @@ import {
 } from 'react-native';
 import { useFonts, BebasNeue_400Regular } from '@expo-google-fonts/bebas-neue';
 import { Oswald_400Regular, Oswald_600SemiBold, Oswald_700Bold } from '@expo-google-fonts/oswald';
-import { signInWithCredential, signInWithEmailAndPassword, GoogleAuthProvider } from 'firebase/auth';
+import {
+  signInWithCredential,
+  signInWithEmailAndPassword,
+  GoogleAuthProvider,
+  sendEmailVerification,
+  signOut,
+} from 'firebase/auth';
 import { auth } from '../../FirebaseConfig'; // adjust path if needed
 import { Ionicons } from '@expo/vector-icons';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
@@ -23,12 +29,26 @@ export default function LoginScreen({ navigation }: Props) {
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const [showPassword, setShowPassword] = useState(false);
+  const [unverifiedEmail, setUnverifiedEmail] = useState<string | null>(null);
+  const [resendLoading, setResendLoading] = useState(false);
+  const [resendCooldown, setResendCooldown] = useState(0);
+
+  // Cooldown countdown timer for resend verification
+  React.useEffect(() => {
+    if (resendCooldown <= 0) return;
+    const interval = setInterval(() => {
+      setResendCooldown((prev) => (prev > 0 ? prev - 1 : 0));
+    }, 1000);
+    return () => clearInterval(interval);
+  }, [resendCooldown]);
 
   const handleGoogleSignIn = async () => {
-    if (loading) return;
+    if (loading || resendLoading) return;
     try {
       setError(null);
+      setSuccessMessage(null);
       setLoading(true);
       await GoogleSignin.hasPlayServices();
       const response = await GoogleSignin.signIn();
@@ -52,26 +72,91 @@ export default function LoginScreen({ navigation }: Props) {
 
   const handleLogin = async () => {
     setError(null);
+    setSuccessMessage(null);
     if (!email.trim() || !password.trim()) {
       setError('Please enter both email and password.');
       return;
     }
     setLoading(true);
     try {
-      await signInWithEmailAndPassword(auth, email.trim(), password);
-      const uid = auth.currentUser!.uid;
+      const userCredential = await signInWithEmailAndPassword(auth, email.trim(), password);
+
+      // Enforce email verification for password accounts
+      if (!userCredential.user.emailVerified) {
+        setUnverifiedEmail(email.trim());
+        await signOut(auth);
+        setError('Your email is not verified. Please check your inbox and verify your email before logging in.');
+        return;
+      }
+
+      setUnverifiedEmail(null);
+      const uid = userCredential.user.uid;
       const targetRoute = await resolveUserRoute(uid);
       console.log(`[NAV] LoginScreen -> resetting navigation to ${targetRoute} for user ${uid}`);
       navigation.reset({ index: 0, routes: [{ name: targetRoute }] });
     } catch (err: any) {
       const code = err.code ?? err.message ?? '';
       console.error('Login error:', err);
-      if (code.includes('auth/user-not-found')) setError('No account found for that email.');
-      else if (code.includes('auth/wrong-password')) setError('Incorrect password.');
-      else if (code.includes('auth/invalid-email')) setError('Invalid email address.');
-      else setError('Login failed. Please try again.');
+      // Generic message to avoid email enumeration
+      if (
+        code.includes('auth/invalid-credential') ||
+        code.includes('auth/user-not-found') ||
+        code.includes('auth/wrong-password')
+      ) {
+        setError('Email or password is incorrect.');
+      } else if (code.includes('auth/invalid-email')) {
+        setError('Invalid email address format.');
+      } else if (code.includes('auth/too-many-requests')) {
+        setError('Too many failed attempts. Please try again later.');
+      } else {
+        setError('Login failed. Please try again.');
+      }
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleResendVerification = async () => {
+    if (resendLoading || resendCooldown > 0) return;
+    setError(null);
+    setSuccessMessage(null);
+
+    const targetEmail = unverifiedEmail || email.trim();
+    if (!targetEmail || !password.trim()) {
+      setError('Please enter your email and password above to resend the verification email.');
+      return;
+    }
+
+    setResendLoading(true);
+    try {
+      const cred = await signInWithEmailAndPassword(auth, targetEmail, password);
+      if (cred.user.emailVerified) {
+        await signOut(auth);
+        setUnverifiedEmail(null);
+        setSuccessMessage('Your email is already verified! You can log in now.');
+        return;
+      }
+
+      await sendEmailVerification(cred.user);
+      await signOut(auth);
+      setSuccessMessage('Verification email sent! Please check your inbox and spam folder.');
+      setResendCooldown(60);
+    } catch (err: any) {
+      const code = err.code ?? err.message ?? '';
+      console.error('Resend verification error:', err);
+      if (
+        code.includes('auth/invalid-credential') ||
+        code.includes('auth/user-not-found') ||
+        code.includes('auth/wrong-password')
+      ) {
+        setError('Email or password is incorrect.');
+      } else if (code.includes('auth/too-many-requests')) {
+        setError('Too many requests. Please try again later.');
+      } else {
+        setError('Failed to resend verification email. Please try again.');
+      }
+    } finally {
+      setResendLoading(false);
     }
   };
 
@@ -90,7 +175,10 @@ export default function LoginScreen({ navigation }: Props) {
             autoComplete="off"
             importantForAutofill="no"
             value={email}
-            onChangeText={setEmail} />
+            onChangeText={(text) => {
+              setEmail(text);
+              if (error) setError(null);
+            }} />
           <View style={styles.passwordRow}>
             <TextInput
               style={styles.passwordInput}
@@ -100,7 +188,10 @@ export default function LoginScreen({ navigation }: Props) {
               autoComplete="off"
               importantForAutofill="no"
               value={password}
-              onChangeText={setPassword}
+              onChangeText={(text) => {
+                setPassword(text);
+                if (error) setError(null);
+              }}
             />
             <TouchableOpacity onPress={() => setShowPassword(!showPassword)} style={styles.eyeButton}>
               <Ionicons name={showPassword ? 'eye-outline' : 'eye-off-outline'} size={22} color="black" />
@@ -109,11 +200,36 @@ export default function LoginScreen({ navigation }: Props) {
         </View>
 
         {error ? (
-          <Text style={{ color: 'red', textAlign: 'center', marginVertical: 8 }}>{error}</Text>
+          <Text style={{ color: '#DC2626', textAlign: 'center', marginVertical: 6, paddingHorizontal: 16, fontSize: 13, fontFamily: 'Oswald_400Regular' }}>
+            {error}
+          </Text>
         ) : null}
 
-        <TouchableOpacity style={styles.loginBox} onPress={handleLogin} disabled={loading}>
-          {loading ? <ActivityIndicator /> : <Text style={styles.text}>LOGIN</Text>}
+        {successMessage ? (
+          <Text style={{ color: '#16A34A', textAlign: 'center', marginVertical: 6, paddingHorizontal: 16, fontSize: 13, fontFamily: 'Oswald_600SemiBold' }}>
+            {successMessage}
+          </Text>
+        ) : null}
+
+        {unverifiedEmail ? (
+          <TouchableOpacity
+            style={[styles.resendBtn, (resendLoading || resendCooldown > 0) && styles.resendBtnDisabled]}
+            onPress={handleResendVerification}
+            disabled={resendLoading || resendCooldown > 0}
+            activeOpacity={0.8}
+          >
+            {resendLoading ? (
+              <ActivityIndicator color="black" size="small" />
+            ) : (
+              <Text style={styles.resendBtnText}>
+                {resendCooldown > 0 ? `RESEND VERIFICATION (${resendCooldown}S)` : 'RESEND VERIFICATION EMAIL'}
+              </Text>
+            )}
+          </TouchableOpacity>
+        ) : null}
+
+        <TouchableOpacity style={styles.loginBox} onPress={handleLogin} disabled={loading || resendLoading}>
+          {loading ? <ActivityIndicator color="white" /> : <Text style={styles.text}>LOGIN</Text>}
         </TouchableOpacity>
 
         <TouchableOpacity style={styles.link} onPress={() => navigation.navigate('SignUp')}>
@@ -329,6 +445,32 @@ const styles = StyleSheet.create({
     marginHorizontal: 16,
     borderRadius: 2,
   },
-
+  resendBtn: {
+    width: 340,
+    height: 48,
+    backgroundColor: '#FEF3C7',
+    borderWidth: 2,
+    borderColor: '#D97706',
+    borderRadius: 12,
+    justifyContent: 'center',
+    alignItems: 'center',
+    alignSelf: 'center',
+    marginBottom: 8,
+    marginTop: 4,
+    paddingHorizontal: 12,
+  },
+  resendBtnDisabled: {
+    opacity: 0.6,
+    backgroundColor: '#F3F4F6',
+    borderColor: '#9CA3AF',
+  },
+  resendBtnText: {
+    fontFamily: 'Oswald_600SemiBold',
+    fontSize: 13,
+    color: '#B45309',
+    letterSpacing: 1.5,
+    textAlign: 'center',
+    textTransform: 'uppercase',
+  },
 });
 

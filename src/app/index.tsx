@@ -18,7 +18,7 @@ import MainScreen from '../components/main/MainScreen';
 import AdminMainScreen from '../components/main/AdminMainScreen';
 import ActiveWorkoutScreen from '../components/main/ActiveWorkoutScreen';
 import WorkoutHistoryScreen from '../components/main/WorkoutHistoryScreen';
-import { onAuthStateChanged } from 'firebase/auth';
+import { onAuthStateChanged, signOut } from 'firebase/auth';
 import { auth } from '../FirebaseConfig';
 import { resolveUserRoute } from '../lib/userStorage';
 import type { RootStackParamList } from '../types/navigation';
@@ -75,6 +75,23 @@ export default function App() {
         setIsResolving(false);
         return;
       }
+
+      // Block unverified email accounts from auto-routing to authenticated screens
+      if (!user.emailVerified) {
+        console.log(`[AUTH] User ${user.uid} is unverified, signing out`);
+        try {
+          await signOut(auth);
+        } catch (signOutErr) {
+          console.warn('[AUTH] Error signing out unverified user:', signOutErr);
+        }
+        if (gen === authResolutionGeneration.current) {
+          setStartupError(null);
+          setInitialRoute('Login');
+          setIsResolving(false);
+        }
+        return;
+      }
+
       await resolveProfileForUser(user.uid, gen);
     });
     return unsubscribe;
