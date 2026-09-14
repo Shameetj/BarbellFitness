@@ -1,5 +1,3 @@
-import type { NavigatorScreenParams } from '@react-navigation/native';
-
 export type MainTabParamList = { Home: undefined; Profile: undefined };
 export type AdminTabParamList = { Registry: undefined; Announcements: undefined; Challenges: undefined; Profile: undefined };
 
@@ -14,4 +12,5 @@ export type RootStackParamList = {
   PlatinumPlan: undefined;
   Main: undefined;
   AdminMain: undefined;
+  ActiveWorkout: undefined;
 };

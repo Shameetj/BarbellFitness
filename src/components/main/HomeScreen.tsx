@@ -5,6 +5,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useFonts, BebasNeue_400Regular } from '@expo-google-fonts/bebas-neue';
 import { Oswald_400Regular, Oswald_600SemiBold, Oswald_700Bold } from '@expo-google-fonts/oswald';
 import { Calendar } from 'react-native-calendars';
+import { Ionicons } from '@expo/vector-icons';
 import { useIsFocused } from '@react-navigation/native';
 import type { BottomTabScreenProps } from '@react-navigation/bottom-tabs';
 import type { MainTabParamList } from '../../types/navigation';
@@ -221,6 +222,26 @@ export default function HomeScreen(_props: Props) {
               </Text>
             </TouchableOpacity>
           </View>
+
+          {/* Start Active Workout CTA Card */}
+          <TouchableOpacity
+            style={styles.startWorkoutBanner}
+            onPress={() => _props.navigation.getParent()?.navigate('ActiveWorkout')}
+            activeOpacity={0.85}
+          >
+            <View style={styles.startWorkoutLeft}>
+              <View style={styles.startWorkoutIconWrap}>
+                <Ionicons name="barbell" size={24} color="white" />
+              </View>
+              <View>
+                <Text style={styles.startWorkoutTitle}>{"LOG TODAY'S WORKOUT"}</Text>
+                <Text style={styles.startWorkoutSubtitle}>Tap to start active session & log sets</Text>
+              </View>
+            </View>
+            <View style={styles.startWorkoutArrowWrap}>
+              <Ionicons name="arrow-forward" size={18} color="white" />
+            </View>
+          </TouchableOpacity>
 
           {/* Attendance Calendar */}
           <View style={styles.calendarWrap}>
@@ -529,5 +550,52 @@ const styles = StyleSheet.create({
   },
   widgetText: {
     fontSize: 15, color: '#555', flex: 1, flexWrap: 'wrap', fontFamily: 'System'
-  }
+  },
+  startWorkoutBanner: {
+    backgroundColor: 'black',
+    borderRadius: 16,
+    borderWidth: 2,
+    borderColor: 'black',
+    paddingVertical: 14,
+    paddingHorizontal: 16,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 16,
+  },
+  startWorkoutLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flex: 1,
+  },
+  startWorkoutIconWrap: {
+    width: 42,
+    height: 42,
+    borderRadius: 10,
+    backgroundColor: '#222',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 12,
+  },
+  startWorkoutTitle: {
+    fontFamily: 'BebasNeue_400Regular',
+    fontSize: 20,
+    color: 'white',
+    letterSpacing: 1.5,
+  },
+  startWorkoutSubtitle: {
+    fontFamily: 'System',
+    fontSize: 12,
+    color: '#BBB',
+    marginTop: 1,
+  },
+  startWorkoutArrowWrap: {
+    width: 32,
+    height: 32,
+    borderRadius: 8,
+    backgroundColor: '#333',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginLeft: 8,
+  },
 });
