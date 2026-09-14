@@ -129,45 +129,53 @@ export type AdminMember = {
   age?: string;
   gender?: string;
   email?: string;
+  role?: 'admin' | 'owner' | 'member';
   profileImage?: string | null;
   membership?: Membership | null;
 };
 
-// Retrieve all members from AsyncStorage
+// Retrieve all members from Firestore users collection
 export const getAllMembers = async (): Promise<AdminMember[]> => {
   try {
-    const keys = await AsyncStorage.getAllKeys();
-    // Filter profile keys
-    const profileKeys = keys.filter(key => key.startsWith('barbellfitness:') && key.endsWith(':profile'));
-    
+    const querySnapshot = await getDocs(collection(db, 'users'));
     const members: AdminMember[] = [];
-    for (const key of profileKeys) {
-      // Extract uid: barbellfitness:uid:profile
-      const parts = key.split(':');
-      if (parts.length === 3) {
-        const uid = parts[1];
-        const profile = await getProfile(uid);
-        if (profile) {
-          const membership = await getMembership(uid);
-          const profileImage = await getProfileImage(uid);
-          members.push({
-            uid,
-            ...profile,
-            profileImage,
-            membership,
-          });
-        }
-      }
+
+    for (const docSnap of querySnapshot.docs) {
+      const data = docSnap.data() as UserProfile;
+      const uid = docSnap.id;
+      const membership = await getMembership(uid);
+      const profileImage = await getProfileImage(uid);
+
+      members.push({
+        uid,
+        fullName: data.fullName || '',
+        phoneNumber: data.phoneNumber || '',
+        dateOfBirth: data.dateOfBirth || '',
+        address: data.address || '',
+        age: data.age,
+        gender: data.gender,
+        email: data.email,
+        role: data.role,
+        profileImage,
+        membership,
+      });
     }
     return members;
   } catch (error) {
-    console.error('Failed to get all members:', error);
+    console.error('Failed to get all members from Firestore:', error);
     return [];
   }
 };
 
-// Delete/Remove member
+// Delete/Remove member (Firestore first, clean up local cache only on success)
 export const deleteMember = async (uid: string): Promise<void> => {
+  try {
+    await deleteDoc(doc(db, 'users', uid));
+  } catch (error) {
+    console.error('Firestore member delete failed:', error);
+    throw error;
+  }
+
   const keys = [profileKey(uid), membershipKey(uid), imageKey(uid), prsKey(uid)];
   await AsyncStorage.multiRemove(keys);
 };
