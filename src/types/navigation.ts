@@ -13,4 +13,5 @@ export type RootStackParamList = {
   Main: undefined;
   AdminMain: undefined;
   ActiveWorkout: undefined;
+  WorkoutHistory: undefined;
 };

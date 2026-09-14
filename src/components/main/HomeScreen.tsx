@@ -243,6 +243,26 @@ export default function HomeScreen(_props: Props) {
             </View>
           </TouchableOpacity>
 
+          {/* Workout History CTA Card */}
+          <TouchableOpacity
+            style={styles.workoutHistoryBanner}
+            onPress={() => _props.navigation.getParent()?.navigate('WorkoutHistory')}
+            activeOpacity={0.85}
+          >
+            <View style={styles.workoutHistoryLeft}>
+              <View style={styles.workoutHistoryIconWrap}>
+                <Ionicons name="time" size={22} color="black" />
+              </View>
+              <View>
+                <Text style={styles.workoutHistoryTitle}>WORKOUT HISTORY</Text>
+                <Text style={styles.workoutHistorySubtitle}>View past sessions, sets & volume</Text>
+              </View>
+            </View>
+            <View style={styles.workoutHistoryArrowWrap}>
+              <Ionicons name="chevron-forward" size={18} color="black" />
+            </View>
+          </TouchableOpacity>
+
           {/* Attendance Calendar */}
           <View style={styles.calendarWrap}>
             <Calendar
@@ -594,6 +614,53 @@ const styles = StyleSheet.create({
     height: 32,
     borderRadius: 8,
     backgroundColor: '#333',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginLeft: 8,
+  },
+  workoutHistoryBanner: {
+    backgroundColor: '#F8F8F8',
+    borderRadius: 16,
+    borderWidth: 2,
+    borderColor: 'black',
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 16,
+  },
+  workoutHistoryLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flex: 1,
+  },
+  workoutHistoryIconWrap: {
+    width: 38,
+    height: 38,
+    borderRadius: 10,
+    backgroundColor: '#EAEAEA',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 12,
+  },
+  workoutHistoryTitle: {
+    fontFamily: 'BebasNeue_400Regular',
+    fontSize: 19,
+    color: 'black',
+    letterSpacing: 1.5,
+  },
+  workoutHistorySubtitle: {
+    fontFamily: 'System',
+    fontSize: 12,
+    color: '#666',
+    marginTop: 1,
+  },
+  workoutHistoryArrowWrap: {
+    width: 30,
+    height: 30,
+    borderRadius: 8,
+    backgroundColor: '#EAEAEA',
     justifyContent: 'center',
     alignItems: 'center',
     marginLeft: 8,

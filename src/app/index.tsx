@@ -16,6 +16,7 @@ import PlatinumScreen from '../components/main/PlatinumScreen';
 import MainScreen from '../components/main/MainScreen';
 import AdminMainScreen from '../components/main/AdminMainScreen';
 import ActiveWorkoutScreen from '../components/main/ActiveWorkoutScreen';
+import WorkoutHistoryScreen from '../components/main/WorkoutHistoryScreen';
 import { onAuthStateChanged } from 'firebase/auth';
 import { auth } from '../FirebaseConfig';
 import { resolveUserRoute } from '../lib/userStorage';
@@ -76,6 +77,7 @@ export default function App() {
         <Stack.Screen name="Main" component={MainScreen} options={{ headerShown: false }} />
         <Stack.Screen name="AdminMain" component={AdminMainScreen} options={{ headerShown: false }} />
         <Stack.Screen name="ActiveWorkout" component={ActiveWorkoutScreen} options={{ headerShown: false }} />
+        <Stack.Screen name="WorkoutHistory" component={WorkoutHistoryScreen} options={{ headerShown: false }} />
       </Stack.Navigator>
     </NavigationContainer>
   );
