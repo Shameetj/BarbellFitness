@@ -60,9 +60,54 @@ export type WorkoutChallenge = {
   createdAt: string;
 };
 
+export type WorkoutSetType = 'warmup' | 'normal' | 'drop' | 'failure';
+
+export type WorkoutSet = {
+  id: string;
+  setNumber: number;
+  type: WorkoutSetType;
+  weight: number;
+  reps: number;
+  unit: 'lbs' | 'kg';
+  rpe?: number;
+  isCompleted: boolean;
+  completedAt?: string;
+};
+
+export type WorkoutExercise = {
+  id: string;
+  exerciseId: string;
+  name: string;
+  category: string;
+  equipment?: string;
+  sets: WorkoutSet[];
+  notes?: string;
+};
+
+export type WorkoutStatus = 'in_progress' | 'completed' | 'cancelled';
+
+export type WorkoutSession = {
+  id: string;
+  userId: string;
+  title: string;
+  date: string;              // YYYY-MM-DD
+  startTime: string;         // ISO timestamp
+  endTime?: string;          // ISO timestamp
+  durationMinutes?: number;
+  status: WorkoutStatus;
+  exerciseIds: string[];
+  exercises: WorkoutExercise[];
+  totalVolume?: number;      // sum of weight * reps for completed sets
+  totalSets?: number;        // count of completed sets
+  notes?: string;
+  createdAt: string;         // ISO timestamp
+  updatedAt: string;         // ISO timestamp
+};
+
 const keyFor = (uid: string, name: string) => `barbellfitness:${uid}:${name}`;
 const profileKey = (uid: string) => keyFor(uid, 'profile'); const imageKey = (uid: string) => keyFor(uid, 'profile-image');
 const membershipKey = (uid: string) => keyFor(uid, 'membership'); const prsKey = (uid: string) => keyFor(uid, 'prs');
+const activeWorkoutKey = (uid: string) => keyFor(uid, 'active-workout');
 export const localDateString = (date: Date) => `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
 export const readJson = async <T>(key: string): Promise<T | null> => { const raw = await AsyncStorage.getItem(key); if (!raw) return null; try { return JSON.parse(raw) as T; } catch { await AsyncStorage.removeItem(key); return null; } };
 
@@ -401,3 +446,230 @@ export const deleteChallenge = async (id: string): Promise<void> => {
     console.warn('Firestore challenges delete failed:', error);
   }
 };
+
+// ==========================================
+// WORKOUT DATA LAYER
+// ==========================================
+
+export const isValidDateString = (dateStr: string): boolean => {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) return false;
+  const [year, month, day] = dateStr.split('-').map(Number);
+  if (month < 1 || month > 12) return false;
+  if (day < 1 || day > 31) return false;
+  const d = new Date(year, month - 1, day);
+  return d.getFullYear() === year && d.getMonth() === month - 1 && d.getDate() === day;
+};
+
+// Reusable workout validation
+export const validateWorkout = (workout: Partial<WorkoutSession>): void => {
+  if (workout.date !== undefined) {
+    if (typeof workout.date !== 'string' || !isValidDateString(workout.date)) {
+      throw new Error(`Invalid workout date: "${workout.date}". Expected YYYY-MM-DD.`);
+    }
+  }
+
+  if (workout.status !== undefined) {
+    const validStatuses: WorkoutStatus[] = ['in_progress', 'completed', 'cancelled'];
+    if (!validStatuses.includes(workout.status)) {
+      throw new Error(`Invalid workout status: "${workout.status}". Expected one of: ${validStatuses.join(', ')}.`);
+    }
+  }
+
+  if (workout.durationMinutes !== undefined && workout.durationMinutes !== null) {
+    if (typeof workout.durationMinutes !== 'number' || isNaN(workout.durationMinutes) || workout.durationMinutes < 1 || workout.durationMinutes > 720) {
+      throw new Error(`Invalid durationMinutes: ${workout.durationMinutes}. Must be between 1 and 720.`);
+    }
+  }
+
+  if (workout.exercises !== undefined) {
+    if (!Array.isArray(workout.exercises)) {
+      throw new Error('Workout exercises must be an array.');
+    }
+
+    for (const exercise of workout.exercises) {
+      if (!exercise || typeof exercise !== 'object') {
+        throw new Error('Invalid exercise entry in workout.');
+      }
+      if (!Array.isArray(exercise.sets)) {
+        throw new Error(`Exercise "${exercise.name || exercise.id}" sets must be an array.`);
+      }
+
+      for (const set of exercise.sets) {
+        if (!set || typeof set !== 'object') {
+          throw new Error('Invalid set entry in exercise.');
+        }
+
+        if (typeof set.setNumber !== 'number' || !Number.isInteger(set.setNumber) || set.setNumber < 1 || set.setNumber > 50) {
+          throw new Error(`Invalid setNumber: ${set.setNumber}. Must be an integer between 1 and 50.`);
+        }
+
+        if (typeof set.weight !== 'number' || isNaN(set.weight) || set.weight < 0 || set.weight > 1500) {
+          throw new Error(`Invalid weight: ${set.weight}. Must be a number between 0 and 1500.`);
+        }
+
+        if (typeof set.reps !== 'number' || !Number.isInteger(set.reps) || set.reps < 1 || set.reps > 100) {
+          throw new Error(`Invalid reps: ${set.reps}. Must be an integer between 1 and 100.`);
+        }
+
+        if (set.rpe !== undefined && set.rpe !== null) {
+          if (typeof set.rpe !== 'number' || isNaN(set.rpe) || set.rpe < 1 || set.rpe > 10 || (set.rpe * 2) % 1 !== 0) {
+            throw new Error(`Invalid RPE: ${set.rpe}. Must be between 1 and 10 in increments of 0.5.`);
+          }
+        }
+      }
+    }
+  }
+};
+
+// Derived workout values calculation
+export const calculateWorkoutStats = (
+  exercises: WorkoutExercise[]
+): { totalVolume: number; totalSets: number } => {
+  let totalVolume = 0;
+  let totalSets = 0;
+
+  for (const exercise of exercises) {
+    if (Array.isArray(exercise.sets)) {
+      for (const set of exercise.sets) {
+        if (set.isCompleted) {
+          totalSets += 1;
+          if (typeof set.weight === 'number' && typeof set.reps === 'number' && set.weight > 0 && set.reps > 0) {
+            totalVolume += set.weight * set.reps;
+          }
+        }
+      }
+    }
+  }
+
+  return { totalVolume, totalSets };
+};
+
+// Fetch all workouts for a member directly from Firestore: /users/{uid}/workouts
+export const getWorkouts = async (uid: string): Promise<WorkoutSession[]> => {
+  try {
+    const qSnap = await getDocs(collection(db, 'users', uid, 'workouts'));
+    const workouts: WorkoutSession[] = [];
+    qSnap.forEach(docSnap => {
+      workouts.push({ id: docSnap.id, ...docSnap.data() } as WorkoutSession);
+    });
+    workouts.sort((a, b) => {
+      const dateCmp = (b.date || '').localeCompare(a.date || '');
+      if (dateCmp !== 0) return dateCmp;
+      const timeCmp = (b.startTime || '').localeCompare(a.startTime || '');
+      if (timeCmp !== 0) return timeCmp;
+      return (b.createdAt || '').localeCompare(a.createdAt || '');
+    });
+    return workouts;
+  } catch (error) {
+    console.error(`Failed to fetch workouts from Firestore for user ${uid}:`, error);
+    throw error;
+  }
+};
+
+// Fetch exactly one workout directly from Firestore: /users/{uid}/workouts/{workoutId}
+export const getWorkout = async (uid: string, workoutId: string): Promise<WorkoutSession | null> => {
+  try {
+    const docSnap = await getDoc(doc(db, 'users', uid, 'workouts', workoutId));
+    if (docSnap.exists()) {
+      return { id: docSnap.id, ...docSnap.data() } as WorkoutSession;
+    }
+    return null;
+  } catch (error) {
+    console.error(`Failed to fetch workout ${workoutId} for user ${uid}:`, error);
+    throw error;
+  }
+};
+
+// Create a workout document in Firestore: /users/{uid}/workouts/{workoutId}
+export const createWorkout = async (
+  uid: string,
+  workout: Omit<WorkoutSession, 'id' | 'createdAt' | 'updatedAt'> & {
+    id?: string;
+    createdAt?: string;
+    updatedAt?: string;
+  }
+): Promise<string> => {
+  try {
+    validateWorkout(workout);
+
+    const stats = calculateWorkoutStats(workout.exercises || []);
+    const now = new Date().toISOString();
+
+    const docRef = workout.id
+      ? doc(db, 'users', uid, 'workouts', workout.id)
+      : doc(collection(db, 'users', uid, 'workouts'));
+
+    const sessionData: WorkoutSession = {
+      ...workout,
+      id: docRef.id,
+      userId: uid,
+      totalVolume: workout.totalVolume ?? stats.totalVolume,
+      totalSets: workout.totalSets ?? stats.totalSets,
+      createdAt: workout.createdAt || now,
+      updatedAt: now,
+    };
+
+    await setDoc(docRef, sessionData);
+    return docRef.id;
+  } catch (error) {
+    console.error(`Failed to create workout in Firestore for user ${uid}:`, error);
+    throw error;
+  }
+};
+
+// Update an existing workout document in Firestore: /users/{uid}/workouts/{workoutId}
+export const updateWorkout = async (
+  uid: string,
+  workoutId: string,
+  updates: Partial<Omit<WorkoutSession, 'id' | 'userId' | 'createdAt'>>
+): Promise<void> => {
+  try {
+    validateWorkout(updates);
+
+    const now = new Date().toISOString();
+    const payload: Partial<WorkoutSession> = {
+      ...updates,
+      updatedAt: now,
+    };
+
+    if (updates.exercises && updates.totalVolume === undefined && updates.totalSets === undefined) {
+      const stats = calculateWorkoutStats(updates.exercises);
+      payload.totalVolume = stats.totalVolume;
+      payload.totalSets = stats.totalSets;
+    }
+
+    await updateDoc(doc(db, 'users', uid, 'workouts', workoutId), payload);
+  } catch (error) {
+    console.error(`Failed to update workout ${workoutId} for user ${uid}:`, error);
+    throw error;
+  }
+};
+
+// Delete a workout document from Firestore: /users/{uid}/workouts/{workoutId}
+export const deleteWorkout = async (uid: string, workoutId: string): Promise<void> => {
+  try {
+    await deleteDoc(doc(db, 'users', uid, 'workouts', workoutId));
+  } catch (error) {
+    console.error(`Failed to delete workout ${workoutId} for user ${uid}:`, error);
+    throw error;
+  }
+};
+
+// Active workout draft / recovery helpers (AsyncStorage)
+export const saveActiveWorkout = async (
+  uid: string,
+  workout: WorkoutSession | (Omit<WorkoutSession, 'id'> & { id?: string })
+): Promise<void> => {
+  await AsyncStorage.setItem(activeWorkoutKey(uid), JSON.stringify(workout));
+};
+
+export const getActiveWorkout = async (
+  uid: string
+): Promise<WorkoutSession | (Omit<WorkoutSession, 'id'> & { id?: string }) | null> => {
+  return readJson<WorkoutSession | (Omit<WorkoutSession, 'id'> & { id?: string })>(activeWorkoutKey(uid));
+};
+
+export const clearActiveWorkout = async (uid: string): Promise<void> => {
+  await AsyncStorage.removeItem(activeWorkoutKey(uid));
+};
+

@@ -72,6 +72,15 @@ service cloud.firestore {
         // ONLY admin/owner can create, update, or delete attendance records
         allow create, update, delete: if isAdminOrOwner();
       }
+
+      // Rules for workouts subcollection
+      match /workouts/{workoutId} {
+        // Authenticated member can read ONLY their own workouts; admins/owners can read all
+        allow read: if isOwner(userId) || isAdminOrOwner();
+
+        // Members can create, update, and delete their own workouts; admins/owners have full control
+        allow create, update, delete: if isOwner(userId) || isAdminOrOwner();
+      }
     }
 
     // Rules for gym announcements
