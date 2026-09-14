@@ -3,37 +3,68 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
     
-    // Helper function to check if the user is authenticated
-    function isAuth() {
+    // Check if request is from an authenticated user
+    function isAuthenticated() {
       return request.auth != null;
     }
-    
-    // Helper function to check if the user has an admin or owner email/role
-    function isAdmin() {
-      return isAuth() && (
-        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'owner' ||
-        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin' ||
-        request.auth.token.email.matches('.*(admin|owner).*')
-      );
+
+    // Check if the authenticated user is accessing their own document
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
     }
 
-    // Rules for users profiles
+    // Check if the authenticated user has an 'admin' or 'owner' role in Firestore
+    function isAdminOrOwner() {
+      return isAuthenticated() &&
+        exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
+        (get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin' ||
+         get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'owner');
+    }
+
+    // Validate that a member creating their own profile cannot grant themselves admin/owner roles
+    function isValidMemberCreate() {
+      return !('role' in request.resource.data) || request.resource.data.role == 'member';
+    }
+
+    // Validate that a member updating their own profile preserves their existing role and cannot escalate privileges
+    function isValidMemberUpdate() {
+      return (!('role' in resource.data) && (!('role' in request.resource.data) || request.resource.data.role == 'member')) ||
+             ('role' in resource.data && request.resource.data.role == resource.data.role);
+    }
+
+    // Rules for user profiles
     match /users/{userId} {
-      allow read: if isAuth();
-      // Users can create/update their own profile. Admins can write any profile.
-      allow write: if isAuth() && (request.auth.uid == userId || isAdmin());
+      // Normal authenticated members can only read their own profile; admins/owners can read all
+      allow read: if isOwner(userId) || isAdminOrOwner();
+
+      // Normal members can create their profile without role escalation; admins/owners can create any profile
+      allow create: if (isOwner(userId) && isValidMemberCreate()) || isAdminOrOwner();
+
+      // Normal members can update their profile while preserving role; admins/owners can update any profile and manage roles
+      allow update: if (isOwner(userId) && isValidMemberUpdate()) || isAdminOrOwner();
+
+      // Only admins/owners can delete user profiles
+      allow delete: if isAdminOrOwner();
     }
 
     // Rules for gym announcements
     match /announcements/{announcementId} {
-      allow read: if isAuth();
-      allow write: if isAdmin();
+      // Authenticated users can read announcements
+      allow read: if isAuthenticated();
+
+      // Only admins/owners can create, update, or delete announcements
+      allow create, update, delete: if isAdminOrOwner();
     }
 
     // Rules for workout challenges
     match /challenges/{challengeId} {
-      allow read: if isAuth();
-      allow write: if isAdmin();
+      // Authenticated users can read challenges
+      allow read: if isAuthenticated();
+
+      // Only admins/owners can create, update, or delete challenges
+      allow create, update, delete: if isAdminOrOwner();
     }
   }
 }
+
+
