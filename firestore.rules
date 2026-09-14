@@ -45,6 +45,15 @@ service cloud.firestore {
 
       // Only admins/owners can delete user profiles
       allow delete: if isAdminOrOwner();
+
+      // Rules for membership subcollection
+      match /membership/{membershipId} {
+        // Authenticated member can read ONLY their own membership; admins/owners can read all
+        allow read: if isOwner(userId) || isAdminOrOwner();
+
+        // ONLY admin/owner can create, update, or delete membership records
+        allow create, update, delete: if isAdminOrOwner();
+      }
     }
 
     // Rules for gym announcements
