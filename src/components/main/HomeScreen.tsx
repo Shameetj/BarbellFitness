@@ -9,38 +9,31 @@ import { useIsFocused } from '@react-navigation/native';
 import type { BottomTabScreenProps } from '@react-navigation/bottom-tabs';
 import type { MainTabParamList } from '../../types/navigation';
 import { auth } from '../../FirebaseConfig';
-import { getMembership, getPrs, localDateString, savePrs, type Membership } from '../../lib/userStorage';
+import {
+  getAttendance,
+  getMembership,
+  getPrs,
+  localDateString,
+  savePrs,
+  type AttendanceRecord,
+  type Membership,
+} from '../../lib/userStorage';
 
 // Helpers
-const toISODate = localDateString;
 const parseISODate = (s: string) => {
   const [y, m, d] = s.split('-').map(Number);
   return new Date(y, m - 1, d);
 };
-const addDays = (d: Date, days: number) => new Date(d.getTime() + days * 24 * 60 * 60 * 1000);
 
-const makeMarkedRange = (startISO: string, endISO: string) => {
-  const start = parseISODate(startISO);
-  const end = parseISODate(endISO);
-  const marked: Record<string, any> = {};
-
-  for (let dt = new Date(start.getTime()); dt <= end; dt = addDays(dt, 1)) {
-    const key = toISODate(dt);
-    const isStart = key === startISO;
-    const isEnd = key === endISO;
-    marked[key] = {
-      color: '#000000',
-      textColor: '#ffffff',
-      startingDay: isStart,
-      endingDay: isEnd,
-    };
+const formatTime = (isoString?: string) => {
+  if (!isoString) return '';
+  try {
+    const date = new Date(isoString);
+    if (isNaN(date.getTime())) return isoString;
+    return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  } catch {
+    return isoString;
   }
-
-  if (marked[endISO]) {
-    marked[endISO].endingDay = true;
-  }
-
-  return marked;
 };
 
 type Props = BottomTabScreenProps<MainTabParamList, 'Home'>;
@@ -55,6 +48,7 @@ export default function HomeScreen(_props: Props) {
   const [isEditingPrs, setIsEditingPrs] = useState(false);
   const [activeTab, setActiveTab] = useState<'Deadlift' | 'Squats' | 'Bench'>('Deadlift');
   const [membership, setMembership] = useState<Membership | null>(null);
+  const [attendance, setAttendance] = useState<AttendanceRecord[]>([]);
 
   const isFocused = useIsFocused();
 
@@ -62,6 +56,7 @@ export default function HomeScreen(_props: Props) {
     if (!isFocused) return;
     loadMembership();
     loadPrs();
+    loadAttendance();
   }, [isFocused]);
 
   const loadPrs = async () => {
@@ -81,6 +76,18 @@ export default function HomeScreen(_props: Props) {
       setMembership(stored);
     } catch {
       console.warn('Failed loading membership');
+    }
+  };
+
+  const loadAttendance = async () => {
+    try {
+      const uid = auth.currentUser?.uid;
+      if (!uid) return;
+      const stored = await getAttendance(uid);
+      setAttendance(stored || []);
+    } catch {
+      console.warn('Failed loading attendance');
+      setAttendance([]);
     }
   };
 
@@ -124,11 +131,25 @@ export default function HomeScreen(_props: Props) {
   const details = getMembershipDetails();
 
   const getMarkedDates = () => {
-    if (!membership || !membership.startDate || !membership.endDate) {
-      return {};
+    const marked: Record<string, { color: string; textColor: string; startingDay: boolean; endingDay: boolean }> = {};
+    for (const record of attendance) {
+      if (record.date) {
+        marked[record.date] = {
+          color: '#000000',
+          textColor: '#ffffff',
+          startingDay: true,
+          endingDay: true,
+        };
+      }
     }
-    return makeMarkedRange(membership.startDate, membership.endDate);
+    return marked;
   };
+
+  const todayDateStr = localDateString(new Date());
+  const todayRecords = attendance.filter((a) => a.date === todayDateStr);
+  const latestTodayRecord = todayRecords.length > 0
+    ? [...todayRecords].sort((a, b) => (b.checkInTime || b.createdAt || '').localeCompare(a.checkInTime || a.createdAt || ''))[0]
+    : null;
 
   const toggleEditPrs = async () => {
     if (isEditingPrs) {
@@ -229,14 +250,22 @@ export default function HomeScreen(_props: Props) {
           <View style={styles.widgetsContainer}>
             <View style={styles.widget}>
               <Text style={styles.widgetTitle}>GYM LOGS (TODAY)</Text>
-              <View style={styles.widgetRow}>
-                <Text style={styles.widgetTextBold}>Check-in:</Text>
-                <Text style={styles.widgetText}> 08:30 AM</Text>
-              </View>
-              <View style={styles.widgetRow}>
-                <Text style={styles.widgetTextBold}>Check-out:</Text>
-                <Text style={styles.widgetText}> 10:15 AM</Text>
-              </View>
+              {latestTodayRecord ? (
+                <>
+                  <View style={styles.widgetRow}>
+                    <Text style={styles.widgetTextBold}>Check-in:</Text>
+                    <Text style={styles.widgetText}> {formatTime(latestTodayRecord.checkInTime)}</Text>
+                  </View>
+                  <View style={styles.widgetRow}>
+                    <Text style={styles.widgetTextBold}>Check-out:</Text>
+                    <Text style={styles.widgetText}>
+                      {' '}{latestTodayRecord.checkOutTime ? formatTime(latestTodayRecord.checkOutTime) : 'In progress'}
+                    </Text>
+                  </View>
+                </>
+              ) : (
+                <Text style={styles.widgetText}>No check-in recorded today</Text>
+              )}
             </View>
 
             <View style={styles.widget}>

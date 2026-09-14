@@ -9,6 +9,8 @@ import {
   getDocs,
   deleteDoc,
   writeBatch,
+  addDoc,
+  updateDoc,
 } from 'firebase/firestore';
 
 export type UserProfile = {
@@ -23,6 +25,16 @@ export type UserProfile = {
 };
 
 export type Membership = { plan: 'Basic' | 'Standard' | 'Wellness' | 'Platinum'; startDate: string; endDate: string; createdAt: string; status?: 'active' | 'inactive' };
+
+export type AttendanceRecord = {
+  id: string;
+  date: string;              // YYYY-MM-DD
+  checkInTime: string;       // ISO timestamp
+  checkOutTime?: string;    // ISO timestamp
+  status: 'present' | 'completed';
+  verifiedBy?: string;      // staff/admin UID or scanner identifier
+  createdAt: string;        // ISO timestamp
+};
 
 export type GymAnnouncement = {
   id: string;
@@ -235,6 +247,59 @@ export const deleteMember = async (uid: string): Promise<void> => {
 
   const keys = [profileKey(uid), membershipKey(uid), imageKey(uid), prsKey(uid)];
   await AsyncStorage.multiRemove(keys);
+};
+
+// Fetch all attendance records directly from Firestore subcollection: /users/{uid}/attendance
+export const getAttendance = async (uid: string): Promise<AttendanceRecord[]> => {
+  try {
+    const qSnap = await getDocs(collection(db, 'users', uid, 'attendance'));
+    const records: AttendanceRecord[] = [];
+    qSnap.forEach(docSnap => {
+      records.push({ id: docSnap.id, ...docSnap.data() } as AttendanceRecord);
+    });
+    return records;
+  } catch (error) {
+    console.error(`Failed to fetch attendance from Firestore for user ${uid}:`, error);
+    return [];
+  }
+};
+
+// Save a new attendance record directly to Firestore subcollection: /users/{uid}/attendance
+export const saveAttendance = async (
+  uid: string,
+  attendance: Omit<AttendanceRecord, 'id'>
+): Promise<string> => {
+  try {
+    const docRef = await addDoc(collection(db, 'users', uid, 'attendance'), attendance);
+    return docRef.id;
+  } catch (error) {
+    console.error(`Failed to save attendance to Firestore for user ${uid}:`, error);
+    throw error;
+  }
+};
+
+// Update an existing attendance record directly in Firestore: /users/{uid}/attendance/{attendanceId}
+export const updateAttendance = async (
+  uid: string,
+  attendanceId: string,
+  attendance: Partial<Omit<AttendanceRecord, 'id'>>
+): Promise<void> => {
+  try {
+    await updateDoc(doc(db, 'users', uid, 'attendance', attendanceId), attendance);
+  } catch (error) {
+    console.error(`Failed to update attendance in Firestore for user ${uid}, record ${attendanceId}:`, error);
+    throw error;
+  }
+};
+
+// Delete an attendance record directly from Firestore: /users/{uid}/attendance/{attendanceId}
+export const deleteAttendance = async (uid: string, attendanceId: string): Promise<void> => {
+  try {
+    await deleteDoc(doc(db, 'users', uid, 'attendance', attendanceId));
+  } catch (error) {
+    console.error(`Failed to delete attendance from Firestore for user ${uid}, record ${attendanceId}:`, error);
+    throw error;
+  }
 };
 
 // Announcements local key
