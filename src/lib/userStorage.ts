@@ -103,14 +103,17 @@ export const resolveUserRoute = async (uid: string): Promise<'AdminMain' | 'Main
   }
 };
 
-export const saveProfile = async (uid: string, profile: UserProfile) => {
-  // Save local
-  await AsyncStorage.setItem(profileKey(uid), JSON.stringify(profile));
-  // Try remote
+// Write profile directly to Firestore /users/{uid} as authoritative source
+export const saveProfile = async (uid: string, profile: UserProfile): Promise<void> => {
   try {
     await setDoc(doc(db, 'users', uid), profile, { merge: true });
+    // Update local cache only after successful Firestore write
+    const local = await readJson<UserProfile>(profileKey(uid));
+    const merged = { ...(local || {}), ...profile };
+    await AsyncStorage.setItem(profileKey(uid), JSON.stringify(merged));
   } catch (error) {
-    console.warn('Firestore profile save failed:', error);
+    console.error(`Failed to save profile to Firestore for user ${uid}:`, error);
+    throw error;
   }
 };
 
